@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+tests/.runtime/
+.coverage
+data/*.db
+data/kea-candidate.json
+artifacts/*
+!artifacts/.gitkeep
+.env

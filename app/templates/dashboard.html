@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · SONiC ZTP Server{% endblock %}
+{% block content %}
+<section class="hero"><div><p class="eyebrow">Provisioning control plane</p><h1>Lab dashboard</h1><p>Safe baseline: DHCP has no active scope and service control is locked.</p></div><span class="badge ok">API online</span></section>
+<section class="grid cards">
+  <article><h2>Kea DHCP</h2><p class="metric">{{ "Active" if status.active else "Stopped" }}</p><p>{{ "Installed" if status.installed else "Not installed" }} · {{ status.service }}</p></article>
+  <article><h2>Provisioning network</h2><p class="metric">{{ settings.provisioning_address }}</p><p>Interface {{ settings.provisioning_interface }}</p></article>
+  <article><h2>DHCP revision</h2><p class="metric">#{{ revision.id }}</p><p>{{ "Valid" if revision.is_valid else "Pending validation" }}</p></article>
+</section>
+<section class="grid two">
+  <article><h2>Recent artifacts</h2>{% if artifacts %}<ul>{% for item in artifacts %}<li>{{ item.original_name }} <small>{{ item.size }} bytes</small></li>{% endfor %}</ul>{% else %}<p class="empty">No images or provisioning files uploaded.</p>{% endif %}</article>
+  <article><h2>Recent audit events</h2>{% if events %}<ul>{% for event in events %}<li><strong>{{ event.action }}</strong> · {{ event.outcome }}<br><small>{{ event.created_at }}</small></li>{% endfor %}</ul>{% else %}<p class="empty">No operations recorded.</p>{% endif %}</article>
+</section>
+{% endblock %}
+

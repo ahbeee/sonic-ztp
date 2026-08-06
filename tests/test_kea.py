@@ -1,0 +1,32 @@
+import json
+from dataclasses import replace
+
+from app.services.kea import KeaProvider
+from app.settings import settings
+
+
+def test_default_config_is_inert_and_bound():
+    provider = KeaProvider(settings)
+    config = provider.default_config()
+    assert config["Dhcp4"]["subnet4"] == []
+    assert config["Dhcp4"]["interfaces-config"]["interfaces"] == ["enp0s8"]
+    assert provider.semantic_errors(config) == []
+
+
+def test_rejects_wildcard_interface():
+    provider = KeaProvider(settings)
+    config = provider.default_config()
+    config["Dhcp4"]["interfaces-config"]["interfaces"] = ["*"]
+    assert provider.semantic_errors(config)
+    normalized, errors = provider.normalize_and_check(json.dumps(config))
+    assert normalized
+    assert errors
+
+
+def test_reads_only_active_leases(tmp_path):
+    lease_file = tmp_path / "leases.csv"
+    lease_file.write_text("address,hwaddr,client_id,valid_lifetime,expire,subnet_id,fqdn_fwd,fqdn_rev,hostname,state,user_context,pool_id\n192.168.56.20,52:54:00:12:34:56,,600,99,1,0,0,onie,0,,0\n192.168.56.21,52:54:00:00:00:01,,600,99,1,0,0,old,1,,0\n")
+    provider = KeaProvider(replace(settings, kea_lease_file=lease_file))
+    leases = provider.leases()
+    assert len(leases) == 1
+    assert leases[0]["hostname"] == "onie"

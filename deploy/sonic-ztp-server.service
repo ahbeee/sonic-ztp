@@ -1,0 +1,24 @@
+[Unit]
+Description=SONiC ZTP Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ahbee
+Group=ahbee
+WorkingDirectory=/home/ahbee/sonic-ztp-server
+Environment=ZTP_BASE_DIR=/home/ahbee/sonic-ztp-server
+Environment=ZTP_PROVISION_INTERFACE=enp0s8
+Environment=ZTP_PROVISION_ADDRESS=192.168.56.200
+Environment=ZTP_ALLOW_SERVICE_CONTROL=false
+ExecStart=/home/ahbee/sonic-ztp-server/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8080
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/ahbee/sonic-ztp-server/data /home/ahbee/sonic-ztp-server/artifacts /etc/kea/sonic-ztp
+
+[Install]
+WantedBy=multi-user.target

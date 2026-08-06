@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sonic-ztp-server"
+version = "0.1.0"
+description = "Web-managed ONIE and Enterprise SONiC provisioning server"
+requires-python = ">=3.8"
+dependencies = [
+  "fastapi==0.103.2",
+  "uvicorn==0.23.2",
+  "SQLAlchemy==2.0.32",
+  "Jinja2==3.1.4",
+  "python-multipart==0.0.9",
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx==0.24.1",
+  "pytest==8.3.5",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+

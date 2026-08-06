@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Artifacts · SONiC ZTP Server{% endblock %}
+{% block content %}
+<section class="hero"><div><p class="eyebrow">Content store</p><h1>Artifacts</h1><p>SONiC installers, ztp.json, config_db.json, and provisioning scripts.</p></div></section>
+<section class="grid two"><article><h2>Upload</h2><form method="post" action="/artifacts" enctype="multipart/form-data"><input type="file" name="file" required><button type="submit">Upload and checksum</button></form></article><article><h2>Stored files</h2>{% if artifacts %}<table><thead><tr><th>Name</th><th>Size</th><th>SHA-256</th></tr></thead><tbody>{% for item in artifacts %}<tr><td><a href="/artifacts/{{ item.id }}/download">{{ item.original_name }}</a></td><td>{{ item.size }}</td><td><code>{{ item.sha256[:12] }}…</code></td></tr>{% endfor %}</tbody></table>{% else %}<p class="empty">No artifacts uploaded.</p>{% endif %}</article></section>
+{% endblock %}
+
