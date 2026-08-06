@@ -7,7 +7,7 @@ The current milestone provides:
 - FastAPI health and JSON APIs
 - a server-rendered dashboard
 - Kea DHCP status, draft configuration, binary validation, revision history, restore, and lease visibility
-- safe artifact upload, SHA-256 calculation, and HTTP download
+- safe artifact upload, editable comments, SHA-256 calculation, and HTTP download
 - SQLite persistence and audit events
 - systemd deployment for Ubuntu
 
@@ -39,4 +39,5 @@ Useful endpoints:
 - The generated initial Kea configuration contains no subnet or pool.
 - Starting/stopping Kea from the web application is disabled by default.
 - Uploaded artifacts are stored outside Git and addressed by a generated ID.
+- Reusing an original filename creates a separate artifact; older uploads are never overwritten.
 - Kea candidate files use `/etc/kea/sonic-ztp`, which works with Ubuntu's default AppArmor profile without weakening it.

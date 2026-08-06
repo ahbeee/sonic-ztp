@@ -163,18 +163,29 @@ def artifacts_page(request: Request, session: Session = Depends(get_session)):
 
 
 @app.post("/artifacts")
-def upload_artifact(file: UploadFile = File(...), session: Session = Depends(get_session)):
+def upload_artifact(file: UploadFile = File(...), comment: str = Form(""), session: Session = Depends(get_session)):
     original_name = Path(file.filename or "artifact.bin").name
     try:
         stored_name, size, sha256 = store_stream(file.file, original_name, settings.artifact_dir, settings.max_upload_bytes)
     except ValueError as exc:
         raise HTTPException(status_code=413, detail=str(exc))
     artifact = Artifact(original_name=original_name, stored_name=stored_name, media_type=file.content_type,
-                        size=size, sha256=sha256)
+                        size=size, sha256=sha256, comment=comment.strip()[:4000])
     session.add(artifact)
     session.flush()
     session.add(AuditEvent(action="artifact.upload", outcome="success",
                            detail="id={} name={} size={} sha256={}".format(artifact.id, original_name, size, sha256)))
+    session.commit()
+    return RedirectResponse("/artifacts", status_code=303)
+
+
+@app.post("/artifacts/{artifact_id}/comment")
+def update_artifact_comment(artifact_id: int, comment: str = Form(""), session: Session = Depends(get_session)):
+    artifact = session.get(Artifact, artifact_id)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    artifact.comment = comment.strip()[:4000]
+    session.add(AuditEvent(action="artifact.comment", outcome="success", detail="id={}".format(artifact.id)))
     session.commit()
     return RedirectResponse("/artifacts", status_code=303)
 

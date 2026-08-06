@@ -35,7 +35,17 @@ def test_restore_revision():
 
 def test_artifact_upload_and_download():
     with TestClient(app) as client:
-        response = client.post("/artifacts", files={"file": ("ztp.json", io.BytesIO(b'{"ztp": {}}'), "application/json")}, follow_redirects=False)
+        response = client.post("/artifacts", data={"comment": "lab candidate"}, files={"file": ("ztp.json", io.BytesIO(b'{"ztp": {}}'), "application/json")}, follow_redirects=False)
         assert response.status_code == 303
         page = client.get("/artifacts")
         assert "ztp.json" in page.text
+        assert "lab candidate" in page.text
+
+
+def test_same_artifact_filename_creates_distinct_records():
+    with TestClient(app) as client:
+        for payload in (b"build-one", b"build-two"):
+            response = client.post("/artifacts", files={"file": ("sonic-vs.bin", io.BytesIO(payload), "application/octet-stream")}, follow_redirects=False)
+            assert response.status_code == 303
+        page = client.get("/artifacts")
+        assert page.text.count("sonic-vs.bin") >= 2

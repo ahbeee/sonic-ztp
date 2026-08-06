@@ -38,4 +38,5 @@ class Artifact(Base):
     media_type: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     size: Mapped[int] = mapped_column(BigInteger)
     sha256: Mapped[str] = mapped_column(String(64), index=True)
+    comment: Mapped[str] = mapped_column(Text, default="")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)

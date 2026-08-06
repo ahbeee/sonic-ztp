@@ -12,6 +12,7 @@ article { background:var(--panel); border:1px solid var(--line); border-radius:1
 .metric { margin:0; color:var(--text); font-size:26px; font-weight:700; }.badge { padding:7px 11px; border:1px solid var(--line); border-radius:999px; font-size:12px; }.badge.ok { color:var(--accent); border-color:#266955; }.badge.neutral { color:var(--muted); }
 ul { list-style:none; margin:0; padding:0; } li { padding:10px 0; border-bottom:1px solid var(--line); } li:last-child { border:0; } small,.empty { color:var(--muted); }
 textarea { width:100%; min-height:440px; padding:14px; resize:vertical; border:1px solid var(--line); border-radius:8px; background:#080d13; color:#cfe4f7; font:13px/1.55 ui-monospace,monospace; }
+label { display:block; margin:16px 0 6px; color:var(--muted); font-size:13px; }.comment { min-height:90px; font-family:inherit; }.compact-comment { min-width:230px; min-height:64px; padding:8px; }.hint { font-size:13px; }
 button { margin-top:12px; padding:10px 16px; border:0; border-radius:7px; background:var(--accent); color:#06251b; font-weight:750; cursor:pointer; }button.secondary { background:#243449; color:var(--text); }.inline { display:inline-block; margin-left:8px; }
 button.compact { margin:0; padding:6px 9px; font-size:12px; }
 input[type=file] { width:100%; padding:18px; border:1px dashed var(--line); border-radius:8px; }
