@@ -40,4 +40,5 @@ Useful endpoints:
 - Starting/stopping Kea from the web application is disabled by default.
 - Uploaded artifacts are stored outside Git and addressed by a generated ID.
 - Reusing an original filename creates a separate artifact; older uploads are never overwritten.
+- Provisioning references use immutable `/files/{artifact-id}/{filename}` URLs, so duplicate original names remain unambiguous.
 - Kea candidate files use `/etc/kea/sonic-ztp`, which works with Ubuntu's default AppArmor profile without weakening it.

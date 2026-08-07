@@ -199,3 +199,15 @@ def download_artifact(artifact_id: int, session: Session = Depends(get_session))
     if not target.is_file():
         raise HTTPException(status_code=410, detail="Artifact file is missing")
     return FileResponse(str(target), media_type=artifact.media_type, filename=artifact.original_name)
+
+
+@app.get("/files/{artifact_id}/{filename}", name="serve_artifact")
+def serve_artifact(artifact_id: int, filename: str, session: Session = Depends(get_session)):
+    """Stable versioned URL intended for ONIE, ZTP and DHCP option values."""
+    artifact = session.get(Artifact, artifact_id)
+    if artifact is None or not artifact.enabled or filename != artifact.original_name:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    target = settings.artifact_dir / artifact.stored_name
+    if not target.is_file():
+        raise HTTPException(status_code=410, detail="Artifact file is missing")
+    return FileResponse(str(target), media_type=artifact.media_type)

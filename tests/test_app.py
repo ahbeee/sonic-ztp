@@ -40,6 +40,11 @@ def test_artifact_upload_and_download():
         page = client.get("/artifacts")
         assert "ztp.json" in page.text
         assert "lab candidate" in page.text
+        artifact_id = int(page.text.split("Artifact #", 1)[1].split(" ", 1)[0])
+        served = client.get(f"/files/{artifact_id}/ztp.json")
+        assert served.status_code == 200
+        assert served.content == b'{"ztp": {}}'
+        assert client.get(f"/files/{artifact_id}/wrong-name.json").status_code == 404
 
 
 def test_same_artifact_filename_creates_distinct_records():
