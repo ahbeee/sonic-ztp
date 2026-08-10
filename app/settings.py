@@ -11,6 +11,7 @@ class Settings:
     database_url: str
     provisioning_interface: str
     provisioning_address: str
+    public_base_url: str
     kea_binary: str
     kea_service: str
     kea_config_path: Path
@@ -31,6 +32,7 @@ class Settings:
             database_url=os.getenv("ZTP_DATABASE_URL", "sqlite:///{}".format(data_dir / "ztp.db")),
             provisioning_interface=os.getenv("ZTP_PROVISION_INTERFACE", "enp0s8"),
             provisioning_address=os.getenv("ZTP_PROVISION_ADDRESS", "192.168.56.200"),
+            public_base_url=os.getenv("ZTP_PUBLIC_BASE_URL", "http://192.168.56.200:8080"),
             kea_binary=os.getenv("ZTP_KEA_BINARY", "/usr/sbin/kea-dhcp4"),
             kea_service=os.getenv("ZTP_KEA_SERVICE", "kea-dhcp4-server"),
             kea_config_path=Path(os.getenv("ZTP_KEA_CONFIG", "/etc/kea/kea-dhcp4.conf")),

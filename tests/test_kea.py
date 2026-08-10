@@ -3,6 +3,8 @@ from dataclasses import replace
 
 from app.services.kea import KeaProvider
 from app.settings import settings
+from app.models import Artifact, ConfigRevision, ProvisioningProfile
+from app.services.profiles import build_candidate
 
 
 def test_default_config_is_inert_and_bound():
@@ -30,3 +32,14 @@ def test_reads_only_active_leases(tmp_path):
     leases = provider.leases()
     assert len(leases) == 1
     assert leases[0]["hostname"] == "onie"
+
+
+def test_sonic_profile_uses_option_67():
+    provider = KeaProvider(settings)
+    current = ConfigRevision(content=json.dumps(provider.default_config()))
+    artifact = Artifact(id=9, original_name="ztp.json", stored_name="x.json", size=1, sha256="0" * 64)
+    profile = ProvisioningProfile(id=2, name="sonic", stage="sonic", artifact_id=9)
+    revision = build_candidate(current, [profile], {9: artifact}, settings, provider)
+    option = json.loads(revision.content)["Dhcp4"]["client-classes"][0]["option-data"][0]
+    assert option["name"] == "boot-file-name"
+    assert option["data"].endswith("/files/9/ztp.json")

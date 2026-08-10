@@ -54,14 +54,17 @@ class KeaProvider:
         return KeaStatus(installed, active, enabled, self.settings.kea_service, self.settings.kea_binary)
 
     def _systemctl_state(self, operation: str) -> str:
-        result = subprocess.run(
-            ["systemctl", operation, self.settings.kea_service],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            universal_newlines=True,
-            timeout=5,
-        )
-        return result.stdout.strip()
+        try:
+            result = subprocess.run(
+                ["systemctl", operation, self.settings.kea_service],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                universal_newlines=True,
+                timeout=5,
+            )
+            return result.stdout.strip()
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return "unavailable"
 
     def normalize_and_check(self, raw_content: str) -> Tuple[str, List[str]]:
         parsed = json.loads(raw_content)

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Profiles · SONiC ZTP Server{% endblock %}
+{% block content %}
+<section class="hero">
+  <div><p class="eyebrow">Provisioning policy</p><h1>Provisioning profiles</h1><p>Create ONIE or Enterprise SONiC rules without editing Kea JSON manually.</p></div>
+  <span class="badge {{ 'ok' if revision.is_valid else 'neutral' }}">Candidate #{{ revision.id }} · {{ 'Valid' if revision.is_valid else 'Needs attention' }}</span>
+</section>
+<section class="profile-grid">
+  <article>
+    <h2>New profile</h2>
+    {% if artifacts %}
+    <form method="post" action="/profiles">
+      <label for="profile-name">Profile name</label>
+      <input id="profile-name" name="name" maxlength="120" placeholder="e.g. QEMU ONIE lab image" required>
+      <label for="profile-stage">Provisioning stage</label>
+      <select id="profile-stage" name="stage" required>
+        {% for key, stage in stages.items() %}<option value="{{ key }}">{{ stage.label }}</option>{% endfor %}
+      </select>
+      <label for="profile-artifact">Artifact</label>
+      <select id="profile-artifact" name="artifact_id" required>
+        {% for item in artifacts %}<option value="{{ item.id }}">#{{ item.id }} · {{ item.original_name }} · {{ item.sha256[:12] }}</option>{% endfor %}
+      </select>
+      <label for="profile-comment">Comment</label>
+      <textarea class="comment" id="profile-comment" name="comment" maxlength="4000" placeholder="Purpose, target platform, test status, or rollout notes"></textarea>
+      <button type="submit">Create and generate candidate</button>
+    </form>
+    {% else %}<p class="empty">Upload an artifact before creating a provisioning profile.</p>{% endif %}
+  </article>
+  <article>
+    <h2>Automatic mapping</h2>
+    {% for key, stage in stages.items() %}
+    <div class="mapping-card"><strong>{{ stage.label }}</strong><span>{{ stage.match }}</span><span>{{ stage.response }}</span></div>
+    {% endfor %}
+    <p class="hint">Only one profile per stage is active. Creating or enabling another profile for that stage switches the active version. Every change creates and validates a new Kea candidate revision; it does not apply the file or start DHCP.</p>
+  </article>
+</section>
+<section class="profile-list">
+  <article>
+    <h2>Configured profiles</h2>
+    {% if profiles %}
+      {% for profile in profiles %}
+      <section class="profile-row">
+        <div><span class="badge {{ 'ok' if profile.enabled else 'neutral' }}">{{ 'Enabled' if profile.enabled else 'Disabled' }}</span><h3>{{ profile.name }}</h3><p>{{ stages[profile.stage].label }}</p></div>
+        <dl class="artifact-meta">
+          <div><dt>Client match</dt><dd>{{ stages[profile.stage].match }}</dd></div>
+          <div><dt>DHCP response</dt><dd>{{ stages[profile.stage].response }}</dd></div>
+        </dl>
+        <div>
+          {% set artifact = artifact_map.get(profile.artifact_id) %}
+          {% if artifact %}<a href="{{ artifact_url(artifact) }}">#{{ artifact.id }} · {{ artifact.original_name }}</a><code class="artifact-url">{{ artifact_url(artifact) }}</code>{% else %}<span class="badge neutral">Artifact unavailable</span>{% endif %}
+          {% if profile.comment %}<p class="profile-comment">{{ profile.comment }}</p>{% endif %}
+        </div>
+        <form method="post" action="/profiles/{{ profile.id }}/toggle"><button class="compact secondary" type="submit">{{ 'Disable' if profile.enabled else 'Enable' }}</button></form>
+      </section>
+      {% endfor %}
+    {% else %}<p class="empty">No provisioning profiles configured.</p>{% endif %}
+  </article>
+</section>
+{% endblock %}

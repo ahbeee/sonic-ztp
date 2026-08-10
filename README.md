@@ -7,6 +7,7 @@ The current milestone provides:
 - FastAPI health and JSON APIs
 - a server-rendered dashboard
 - Kea DHCP status, draft configuration, binary validation, revision history, restore, and lease visibility
+- GUI provisioning profiles that generate Kea client classes for ONIE option 114 and SONiC ZTP option 67
 - safe artifact upload, editable comments, SHA-256 calculation, and HTTP download
 - SQLite persistence and audit events
 - systemd deployment for Ubuntu
@@ -42,3 +43,4 @@ Useful endpoints:
 - Reusing an original filename creates a separate artifact; older uploads are never overwritten.
 - Provisioning references use immutable `/files/{artifact-id}/{filename}` URLs, so duplicate original names remain unambiguous.
 - Kea candidate files use `/etc/kea/sonic-ztp`, which works with Ubuntu's default AppArmor profile without weakening it.
+- Profile changes create validated candidate revisions only; applying configuration and controlling DHCP remain locked.

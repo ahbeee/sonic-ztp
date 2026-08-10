@@ -7,12 +7,14 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import desc, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, init_database
-from app.models import Artifact, AuditEvent, ConfigRevision
+from app.models import Artifact, AuditEvent, ConfigRevision, ProvisioningProfile
 from app.services.artifacts import store_stream
 from app.services.kea import KeaProvider
+from app.services.profiles import STAGES, artifact_url, build_candidate
 from app.settings import settings
 
 
@@ -36,6 +38,20 @@ def latest_revision(session: Session) -> ConfigRevision:
         revision = ConfigRevision(content=json.dumps(kea.default_config(), indent=2), validation_output="Not validated")
         session.add(revision)
         session.commit()
+    return revision
+
+
+def regenerate_profile_candidate(session: Session) -> ConfigRevision:
+    profiles = session.scalars(select(ProvisioningProfile).order_by(ProvisioningProfile.id)).all()
+    artifacts = {item.id: item for item in session.scalars(select(Artifact)).all()}
+    revision = build_candidate(latest_revision(session), profiles, artifacts, settings, kea)
+    session.add(revision)
+    session.flush()
+    session.add(AuditEvent(
+        action="profiles.generate",
+        outcome="success" if revision.is_valid else "failed",
+        detail="revision={}".format(revision.id),
+    ))
     return revision
 
 
@@ -160,6 +176,79 @@ def restore_dhcp_revision(revision_id: int, session: Session = Depends(get_sessi
 def artifacts_page(request: Request, session: Session = Depends(get_session)):
     artifacts = session.scalars(select(Artifact).order_by(desc(Artifact.id))).all()
     return templates.TemplateResponse("artifacts.html", {"request": request, "artifacts": artifacts})
+
+
+@app.get("/profiles", response_class=HTMLResponse)
+def profiles_page(request: Request, session: Session = Depends(get_session)):
+    profiles = session.scalars(select(ProvisioningProfile).order_by(desc(ProvisioningProfile.id))).all()
+    artifacts = session.scalars(select(Artifact).where(Artifact.enabled.is_(True)).order_by(desc(Artifact.id))).all()
+    artifact_map = {item.id: item for item in artifacts}
+    return templates.TemplateResponse("profiles.html", {
+        "request": request,
+        "profiles": profiles,
+        "artifacts": artifacts,
+        "artifact_map": artifact_map,
+        "stages": STAGES,
+        "artifact_url": lambda item: artifact_url(settings, item),
+        "revision": latest_revision(session),
+    })
+
+
+@app.post("/profiles")
+def create_profile(
+    name: str = Form(...),
+    stage: str = Form(...),
+    artifact_id: int = Form(...),
+    comment: str = Form(""),
+    session: Session = Depends(get_session),
+):
+    clean_name = name.strip()
+    artifact = session.get(Artifact, artifact_id)
+    if not clean_name or len(clean_name) > 120:
+        raise HTTPException(status_code=422, detail="Profile name is required and must not exceed 120 characters")
+    if stage not in STAGES:
+        raise HTTPException(status_code=422, detail="Unsupported provisioning stage")
+    if artifact is None or not artifact.enabled:
+        raise HTTPException(status_code=422, detail="Selected artifact is unavailable")
+    for existing in session.scalars(
+        select(ProvisioningProfile).where(
+            ProvisioningProfile.stage == stage,
+            ProvisioningProfile.enabled.is_(True),
+        )
+    ):
+        existing.enabled = False
+    profile = ProvisioningProfile(name=clean_name, stage=stage, artifact_id=artifact.id, comment=comment.strip()[:4000])
+    session.add(profile)
+    try:
+        session.flush()
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="Profile name already exists")
+    revision = regenerate_profile_candidate(session)
+    session.add(AuditEvent(action="profile.create", outcome="success", detail="profile={} revision={}".format(profile.id, revision.id)))
+    session.commit()
+    return RedirectResponse("/profiles", status_code=303)
+
+
+@app.post("/profiles/{profile_id}/toggle")
+def toggle_profile(profile_id: int, session: Session = Depends(get_session)):
+    profile = session.get(ProvisioningProfile, profile_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    enabling = not profile.enabled
+    if enabling:
+        for existing in session.scalars(
+            select(ProvisioningProfile).where(
+                ProvisioningProfile.stage == profile.stage,
+                ProvisioningProfile.enabled.is_(True),
+            )
+        ):
+            existing.enabled = False
+    profile.enabled = enabling
+    revision = regenerate_profile_candidate(session)
+    session.add(AuditEvent(action="profile.toggle", outcome="success", detail="profile={} enabled={} revision={}".format(profile.id, profile.enabled, revision.id)))
+    session.commit()
+    return RedirectResponse("/profiles", status_code=303)
 
 
 @app.post("/artifacts")

@@ -40,3 +40,15 @@ class Artifact(Base):
     sha256: Mapped[str] = mapped_column(String(64), index=True)
     comment: Mapped[str] = mapped_column(Text, default="")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class ProvisioningProfile(Base):
+    __tablename__ = "provisioning_profiles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    name: Mapped[str] = mapped_column(String(120), unique=True)
+    stage: Mapped[str] = mapped_column(String(20), index=True)
+    artifact_id: Mapped[int] = mapped_column(Integer, index=True)
+    comment: Mapped[str] = mapped_column(Text, default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)

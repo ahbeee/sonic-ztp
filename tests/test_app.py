@@ -54,3 +54,29 @@ def test_same_artifact_filename_creates_distinct_records():
             assert response.status_code == 303
         page = client.get("/artifacts")
         assert page.text.count("sonic-vs.bin") >= 2
+
+
+def test_create_onie_profile_generates_versioned_candidate():
+    with TestClient(app) as client:
+        client.post("/artifacts", files={"file": ("onie-installer.bin", io.BytesIO(b"image"), "application/octet-stream")})
+        page = client.get("/artifacts")
+        artifact_id = int(page.text.split("Artifact #", 1)[1].split(" ", 1)[0])
+        profile_name = f"onie-test-{artifact_id}"
+        response = client.post("/profiles", data={"name": profile_name, "stage": "onie", "artifact_id": artifact_id, "comment": "test"}, follow_redirects=False)
+        assert response.status_code == 303
+        config = client.get("/api/dhcp/config").json()["content"]["Dhcp4"]
+        generated = config["client-classes"][-1]
+        assert generated["option-data"][0]["code"] == 114
+        assert f"/files/{artifact_id}/onie-installer.bin" in generated["option-data"][0]["data"]
+        assert profile_name in client.get("/profiles").text
+
+
+def test_only_one_profile_per_stage_remains_enabled():
+    with TestClient(app) as client:
+        client.post("/artifacts", files={"file": ("new.bin", io.BytesIO(b"new"), "application/octet-stream")})
+        artifact_id = int(client.get("/artifacts").text.split("Artifact #", 1)[1].split(" ", 1)[0])
+        client.post("/profiles", data={"name": f"onie-new-{artifact_id}", "stage": "onie", "artifact_id": artifact_id})
+        config = client.get("/api/dhcp/config").json()["content"]["Dhcp4"]
+        onie_classes = [item for item in config["client-classes"] if "onie_vendor" in item["test"]]
+        assert len(onie_classes) == 1
+        assert f"/files/{artifact_id}/new.bin" in onie_classes[0]["option-data"][0]["data"]
