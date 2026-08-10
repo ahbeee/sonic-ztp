@@ -14,7 +14,15 @@ from app.database import SessionLocal, init_database
 from app.models import Artifact, AuditEvent, ConfigRevision, ProvisioningProfile
 from app.services.artifacts import store_stream
 from app.services.kea import KeaProvider
-from app.services.profiles import STAGES, artifact_url, build_candidate
+from app.services.profiles import (
+    MATCH_OPERATORS,
+    MATCH_OPTIONS,
+    STAGES,
+    artifact_url,
+    build_candidate,
+    match_summary,
+    validate_match,
+)
 from app.settings import settings
 
 
@@ -189,6 +197,9 @@ def profiles_page(request: Request, session: Session = Depends(get_session)):
         "artifacts": artifacts,
         "artifact_map": artifact_map,
         "stages": STAGES,
+        "match_options": MATCH_OPTIONS,
+        "match_operators": MATCH_OPERATORS,
+        "match_summary": match_summary,
         "artifact_url": lambda item: artifact_url(settings, item),
         "revision": latest_revision(session),
     })
@@ -199,6 +210,9 @@ def create_profile(
     name: str = Form(...),
     stage: str = Form(...),
     artifact_id: int = Form(...),
+    match_option: int = Form(0),
+    match_operator: str = Form(""),
+    match_value: str = Form(""),
     comment: str = Form(""),
     session: Session = Depends(get_session),
 ):
@@ -208,6 +222,14 @@ def create_profile(
         raise HTTPException(status_code=422, detail="Profile name is required and must not exceed 120 characters")
     if stage not in STAGES:
         raise HTTPException(status_code=422, detail="Unsupported provisioning stage")
+    stage_defaults = STAGES[stage]
+    selected_option = match_option or stage_defaults["default_option"]
+    selected_operator = match_operator or stage_defaults["default_operator"]
+    selected_value = match_value.strip() or stage_defaults["default_value"]
+    try:
+        validate_match(selected_option, selected_operator, selected_value)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     if artifact is None or not artifact.enabled:
         raise HTTPException(status_code=422, detail="Selected artifact is unavailable")
     for existing in session.scalars(
@@ -217,7 +239,15 @@ def create_profile(
         )
     ):
         existing.enabled = False
-    profile = ProvisioningProfile(name=clean_name, stage=stage, artifact_id=artifact.id, comment=comment.strip()[:4000])
+    profile = ProvisioningProfile(
+        name=clean_name,
+        stage=stage,
+        artifact_id=artifact.id,
+        match_option=selected_option,
+        match_operator=selected_operator,
+        match_value=selected_value,
+        comment=comment.strip()[:4000],
+    )
     session.add(profile)
     try:
         session.flush()

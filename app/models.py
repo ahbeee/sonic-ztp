@@ -50,5 +50,8 @@ class ProvisioningProfile(Base):
     name: Mapped[str] = mapped_column(String(120), unique=True)
     stage: Mapped[str] = mapped_column(String(20), index=True)
     artifact_id: Mapped[int] = mapped_column(Integer, index=True)
+    match_option: Mapped[int] = mapped_column(Integer, default=60)
+    match_operator: Mapped[str] = mapped_column(String(20), default="starts_with")
+    match_value: Mapped[str] = mapped_column(String(255), default="onie_vendor")
     comment: Mapped[str] = mapped_column(Text, default="")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)

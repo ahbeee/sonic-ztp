@@ -8,6 +8,7 @@ The current milestone provides:
 - a server-rendered dashboard
 - Kea DHCP status, draft configuration, binary validation, revision history, restore, and lease visibility
 - GUI provisioning profiles that generate Kea client classes for ONIE option 114 and SONiC ZTP option 67
+- Configurable client matching for DHCP option 60 or 77 with Equals and Starts with comparisons
 - safe artifact upload, editable comments, SHA-256 calculation, and HTTP download
 - SQLite persistence and audit events
 - systemd deployment for Ubuntu

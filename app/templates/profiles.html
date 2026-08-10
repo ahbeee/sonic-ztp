@@ -14,8 +14,18 @@
       <input id="profile-name" name="name" maxlength="120" placeholder="e.g. QEMU ONIE lab image" required>
       <label for="profile-stage">Provisioning stage</label>
       <select id="profile-stage" name="stage" required>
-        {% for key, stage in stages.items() %}<option value="{{ key }}">{{ stage.label }}</option>{% endfor %}
+        {% for key, stage in stages.items() %}<option value="{{ key }}" data-option="{{ stage.default_option }}" data-operator="{{ stage.default_operator }}" data-value="{{ stage.default_value }}">{{ stage.label }}</option>{% endfor %}
       </select>
+      <fieldset class="match-fields">
+        <legend>Client match</legend>
+        <div class="match-grid">
+          <div><label for="match-option">DHCP option</label><select id="match-option" name="match_option">{% for code, label in match_options.items() %}<option value="{{ code }}">{{ code }} · {{ label }}</option>{% endfor %}</select></div>
+          <div><label for="match-operator">Comparison</label><select id="match-operator" name="match_operator">{% for key, label in match_operators.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></div>
+        </div>
+        <label for="match-value">Value</label>
+        <input id="match-value" name="match_value" maxlength="255" value="onie_vendor" required>
+        <p class="hint">Defaults follow the selected stage, but may be changed for vendor-specific ONIE implementations.</p>
+      </fieldset>
       <label for="profile-artifact">Artifact</label>
       <select id="profile-artifact" name="artifact_id" required>
         {% for item in artifacts %}<option value="{{ item.id }}">#{{ item.id }} · {{ item.original_name }} · {{ item.sha256[:12] }}</option>{% endfor %}
@@ -29,7 +39,7 @@
   <article>
     <h2>Automatic mapping</h2>
     {% for key, stage in stages.items() %}
-    <div class="mapping-card"><strong>{{ stage.label }}</strong><span>{{ stage.match }}</span><span>{{ stage.response }}</span></div>
+    <div class="mapping-card"><strong>{{ stage.label }}</strong><span>Default: option {{ stage.default_option }} {{ match_operators[stage.default_operator].lower() }} {{ stage.default_value }}</span><span>{{ stage.response }}</span></div>
     {% endfor %}
     <p class="hint">Only one profile per stage is active. Creating or enabling another profile for that stage switches the active version. Every change creates and validates a new Kea candidate revision; it does not apply the file or start DHCP.</p>
   </article>
@@ -42,7 +52,7 @@
       <section class="profile-row">
         <div><span class="badge {{ 'ok' if profile.enabled else 'neutral' }}">{{ 'Enabled' if profile.enabled else 'Disabled' }}</span><h3>{{ profile.name }}</h3><p>{{ stages[profile.stage].label }}</p></div>
         <dl class="artifact-meta">
-          <div><dt>Client match</dt><dd>{{ stages[profile.stage].match }}</dd></div>
+          <div><dt>Client match</dt><dd>{{ match_summary(profile) }}</dd></div>
           <div><dt>DHCP response</dt><dd>{{ stages[profile.stage].response }}</dd></div>
         </dl>
         <div>
@@ -56,4 +66,19 @@
     {% else %}<p class="empty">No provisioning profiles configured.</p>{% endif %}
   </article>
 </section>
+<script>
+(() => {
+  const stage = document.querySelector('#profile-stage');
+  const option = document.querySelector('#match-option');
+  const operator = document.querySelector('#match-operator');
+  const value = document.querySelector('#match-value');
+  if (!stage || !option || !operator || !value) return;
+  stage.addEventListener('change', () => {
+    const selected = stage.options[stage.selectedIndex];
+    option.value = selected.dataset.option;
+    operator.value = selected.dataset.operator;
+    value.value = selected.dataset.value;
+  });
+})();
+</script>
 {% endblock %}
