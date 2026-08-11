@@ -24,18 +24,18 @@
 
       <section id="onie-fields">
         <label for="profile-artifact">NOS image</label>
-        <select id="profile-artifact" name="artifact_id">{% for item in artifacts %}<option value="{{ item.id }}">#{{ item.id }} · {{ item.original_name }} · {{ item.sha256[:12] }}</option>{% endfor %}</select>
+        <select id="profile-artifact" name="artifact_id">{% for item in firmware_artifacts %}<option value="{{ item.id }}">#{{ item.id }} · {{ item.original_name }} · {{ item.sha256[:12] }}</option>{% endfor %}</select>
       </section>
 
       <section id="sonic-fields" hidden>
         <fieldset class="ztp-sections">
           <legend>Generated ztp.json sections</legend>
           <label class="section-toggle"><input type="checkbox" data-target="firmware-artifact"> 01-firmware</label>
-          <select id="firmware-artifact" name="firmware_artifact_id" disabled><option value="0">Select firmware image</option>{% for item in artifacts %}<option value="{{ item.id }}">#{{ item.id }} · {{ item.original_name }}</option>{% endfor %}</select>
+          <select id="firmware-artifact" name="firmware_artifact_id" disabled><option value="0">Select firmware image</option>{% for item in firmware_artifacts %}<option value="{{ item.id }}">#{{ item.id }} · {{ item.original_name }}</option>{% endfor %}</select>
           <label class="section-toggle"><input type="checkbox" data-target="configdb-artifact"> 02-configdb-json</label>
-          <select id="configdb-artifact" name="configdb_artifact_id" disabled><option value="0">Select config_db.json</option>{% for item in artifacts %}<option value="{{ item.id }}">#{{ item.id }} · {{ item.original_name }}</option>{% endfor %}</select>
+          <select id="configdb-artifact" name="configdb_artifact_id" disabled><option value="0">Select config_db.json</option>{% for item in json_artifacts %}<option value="{{ item.id }}">#{{ item.id }} · {{ item.original_name }}</option>{% endfor %}</select>
           <label class="section-toggle"><input type="checkbox" data-target="script-artifact"> 03-provisioning-script</label>
-          <select id="script-artifact" name="script_artifact_id" disabled><option value="0">Select script</option>{% for item in artifacts %}<option value="{{ item.id }}">#{{ item.id }} · {{ item.original_name }}</option>{% endfor %}</select>
+          <select id="script-artifact" name="script_artifact_id" disabled><option value="0">Select script</option>{% for item in script_artifacts %}<option value="{{ item.id }}">#{{ item.id }} · {{ item.original_name }}</option>{% endfor %}</select>
         </fieldset>
       </section>
 
