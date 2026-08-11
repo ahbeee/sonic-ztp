@@ -93,7 +93,10 @@ def test_sonic_profile_generates_configdb_only_json():
         }, follow_redirects=False)
         assert response.status_code == 303
         config = client.get("/api/dhcp/config").json()["content"]["Dhcp4"]
-        generated_class = next(item for item in config["client-classes"] if f"/ztp/" in item["option-data"][0]["data"])
+        generated_class = max(
+            (item for item in config["client-classes"] if "/ztp/" in item["option-data"][0]["data"]),
+            key=lambda item: int(item["option-data"][0]["data"].split("/ztp/")[1].split("/")[0]),
+        )
         profile_id = int(generated_class["option-data"][0]["data"].split("/ztp/")[1].split("/")[0])
         document = client.get(f"/ztp/{profile_id}/ztp.json").json()
         assert list(document["ztp"]) == ["02-configdb-json"]
