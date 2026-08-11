@@ -72,12 +72,29 @@ def test_create_onie_profile_generates_versioned_candidate():
         assert profile_name in client.get("/profiles").text
 
 
-def test_only_one_profile_per_stage_remains_enabled():
+def test_multiple_profiles_per_stage_remain_available():
     with TestClient(app) as client:
         client.post("/artifacts", files={"file": ("new.bin", io.BytesIO(b"new"), "application/octet-stream")})
         artifact_id = int(client.get("/artifacts").text.split("Artifact #", 1)[1].split(" ", 1)[0])
-        client.post("/profiles", data={"name": f"onie-new-{artifact_id}", "stage": "onie", "artifact_id": artifact_id})
+        client.post("/profiles", data={"name": f"onie-new-{artifact_id}", "stage": "onie", "artifact_id": artifact_id, "match_option": "60", "match_operator": "equals", "match_value": f"vendor_{artifact_id}"})
         config = client.get("/api/dhcp/config").json()["content"]["Dhcp4"]
         onie_classes = [item for item in config["client-classes"] if item["option-data"][0].get("code") == 114]
-        assert len(onie_classes) == 1
-        assert f"/files/{artifact_id}/new.bin" in onie_classes[0]["option-data"][0]["data"]
+        assert any(f"/files/{artifact_id}/new.bin" in item["option-data"][0]["data"] for item in onie_classes)
+
+
+def test_sonic_profile_generates_configdb_only_json():
+    with TestClient(app) as client:
+        client.post("/artifacts", files={"file": ("leaf_config_db.json", io.BytesIO(b'{"DEVICE_METADATA": {}}'), "application/json")})
+        artifact_id = int(client.get("/artifacts").text.split("Artifact #", 1)[1].split(" ", 1)[0])
+        response = client.post("/profiles", data={
+            "name": f"sonic-leaf-{artifact_id}", "stage": "sonic", "artifact_id": "0",
+            "match_option": ["61", "77"], "match_operator": ["starts_with", "equals"],
+            "match_value": ["SONiC##", "SONiC-ZTP"], "configdb_artifact_id": str(artifact_id),
+        }, follow_redirects=False)
+        assert response.status_code == 303
+        config = client.get("/api/dhcp/config").json()["content"]["Dhcp4"]
+        generated_class = next(item for item in config["client-classes"] if f"/ztp/" in item["option-data"][0]["data"])
+        profile_id = int(generated_class["option-data"][0]["data"].split("/ztp/")[1].split("/")[0])
+        document = client.get(f"/ztp/{profile_id}/ztp.json").json()
+        assert list(document["ztp"]) == ["02-configdb-json"]
+        assert document["ztp"]["02-configdb-json"]["url"]["source"].endswith(f"/files/{artifact_id}/leaf_config_db.json")

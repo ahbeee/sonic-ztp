@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Integer, String, Text
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -53,5 +53,19 @@ class ProvisioningProfile(Base):
     match_option: Mapped[int] = mapped_column(Integer, default=60)
     match_operator: Mapped[str] = mapped_column(String(20), default="starts_with")
     match_value: Mapped[str] = mapped_column(String(255), default="onie_vendor")
+    firmware_artifact_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    configdb_artifact_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    script_artifact_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     comment: Mapped[str] = mapped_column(Text, default="")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class ProfileMatch(Base):
+    __tablename__ = "profile_matches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    profile_id: Mapped[int] = mapped_column(ForeignKey("provisioning_profiles.id"), index=True)
+    option_code: Mapped[int] = mapped_column(Integer)
+    operator: Mapped[str] = mapped_column(String(20))
+    value: Mapped[str] = mapped_column(String(255))
+    position: Mapped[int] = mapped_column(Integer, default=0)

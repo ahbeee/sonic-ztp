@@ -2,83 +2,86 @@
 {% block title %}Profiles · SONiC ZTP Server{% endblock %}
 {% block content %}
 <section class="hero">
-  <div><p class="eyebrow">Provisioning policy</p><h1>Provisioning profiles</h1><p>Create ONIE or Enterprise SONiC rules without editing Kea JSON manually.</p></div>
+  <div><p class="eyebrow">Provisioning policy</p><h1>Provisioning profiles</h1><p>Match different devices and generate the correct ONIE image URL or Enterprise SONiC ztp.json.</p></div>
   <span class="badge {{ 'ok' if revision.is_valid else 'neutral' }}">Candidate #{{ revision.id }} · {{ 'Valid' if revision.is_valid else 'Needs attention' }}</span>
 </section>
 <section class="profile-grid">
   <article>
     <h2>New profile</h2>
     {% if artifacts %}
-    <form method="post" action="/profiles">
+    <form method="post" action="/profiles" id="profile-form">
       <label for="profile-name">Profile name</label>
-      <input id="profile-name" name="name" maxlength="120" placeholder="e.g. QEMU ONIE lab image" required>
+      <input id="profile-name" name="name" maxlength="120" placeholder="e.g. Leaf switches - config A" required>
       <label for="profile-stage">Provisioning stage</label>
-      <select id="profile-stage" name="stage" required>
-        {% for key, stage in stages.items() %}<option value="{{ key }}" data-option="{{ stage.default_option }}" data-operator="{{ stage.default_operator }}" data-value="{{ stage.default_value }}">{{ stage.label }}</option>{% endfor %}
-      </select>
+      <select id="profile-stage" name="stage" required><option value="onie">ONIE NOS installation</option><option value="sonic">Enterprise SONiC ZTP</option></select>
+
       <fieldset class="match-fields">
-        <legend>Client match</legend>
-        <div class="match-grid">
-          <div><label for="match-option">DHCP option</label><select id="match-option" name="match_option">{% for code, label in match_options.items() %}<option value="{{ code }}">{{ code }} · {{ label }}</option>{% endfor %}</select></div>
-          <div><label for="match-operator">Comparison</label><select id="match-operator" name="match_operator">{% for key, label in match_operators.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></div>
-        </div>
-        <label for="match-value">Value</label>
-        <input id="match-value" name="match_value" maxlength="255" value="onie_vendor" required>
-        <p class="hint">Defaults follow the selected stage, but may be changed for vendor-specific ONIE implementations.</p>
+        <legend>Client matches (all conditions must match)</legend>
+        <div id="match-list"></div>
+        <button class="compact secondary" id="add-match" type="button">+ Add match</button>
+        <p class="hint">Enterprise SONiC defaults to Option 61 starts with SONiC## AND Option 77 equals SONiC-ZTP.</p>
       </fieldset>
-      <label for="profile-artifact">Artifact</label>
-      <select id="profile-artifact" name="artifact_id" required>
-        {% for item in artifacts %}<option value="{{ item.id }}">#{{ item.id }} · {{ item.original_name }} · {{ item.sha256[:12] }}</option>{% endfor %}
-      </select>
+
+      <section id="onie-fields">
+        <label for="profile-artifact">NOS image</label>
+        <select id="profile-artifact" name="artifact_id">{% for item in artifacts %}<option value="{{ item.id }}">#{{ item.id }} · {{ item.original_name }} · {{ item.sha256[:12] }}</option>{% endfor %}</select>
+      </section>
+
+      <section id="sonic-fields" hidden>
+        <fieldset class="ztp-sections">
+          <legend>Generated ztp.json sections</legend>
+          <label class="section-toggle"><input type="checkbox" data-target="firmware-artifact"> 01-firmware</label>
+          <select id="firmware-artifact" name="firmware_artifact_id" disabled><option value="0">Select firmware image</option>{% for item in artifacts %}<option value="{{ item.id }}">#{{ item.id }} · {{ item.original_name }}</option>{% endfor %}</select>
+          <label class="section-toggle"><input type="checkbox" data-target="configdb-artifact"> 02-configdb-json</label>
+          <select id="configdb-artifact" name="configdb_artifact_id" disabled><option value="0">Select config_db.json</option>{% for item in artifacts %}<option value="{{ item.id }}">#{{ item.id }} · {{ item.original_name }}</option>{% endfor %}</select>
+          <label class="section-toggle"><input type="checkbox" data-target="script-artifact"> 03-provisioning-script</label>
+          <select id="script-artifact" name="script_artifact_id" disabled><option value="0">Select script</option>{% for item in artifacts %}<option value="{{ item.id }}">#{{ item.id }} · {{ item.original_name }}</option>{% endfor %}</select>
+        </fieldset>
+      </section>
+
       <label for="profile-comment">Comment</label>
-      <textarea class="comment" id="profile-comment" name="comment" maxlength="4000" placeholder="Purpose, target platform, test status, or rollout notes"></textarea>
+      <textarea class="comment" id="profile-comment" name="comment" maxlength="4000" placeholder="Purpose, device group, test status, or rollout notes"></textarea>
       <button type="submit">Create and generate candidate</button>
     </form>
-    {% else %}<p class="empty">Upload an artifact before creating a provisioning profile.</p>{% endif %}
+    {% else %}<p class="empty">Upload the required image or configuration files before creating a profile.</p>{% endif %}
   </article>
   <article>
-    <h2>Automatic mapping</h2>
-    {% for key, stage in stages.items() %}
-    <div class="mapping-card"><strong>{{ stage.label }}</strong><span>Default: option {{ stage.default_option }} {{ match_operators[stage.default_operator].lower() }} {{ stage.default_value }}</span><span>{{ stage.response }}</span></div>
-    {% endfor %}
-    <p class="hint">Only one profile per stage is active. Creating or enabling another profile for that stage switches the active version. Every change creates and validates a new Kea candidate revision; it does not apply the file or start DHCP.</p>
+    <h2>How routing works</h2>
+    <div class="mapping-card"><strong>ONIE NOS installation</strong><span>One or more client matches</span><span>DHCP option 114 → selected NOS image</span></div>
+    <div class="mapping-card"><strong>Enterprise SONiC ZTP</strong><span>Option 61 and 77 by default; add more conditions when needed</span><span>DHCP option 67 → profile-specific generated ztp.json</span></div>
+    <p class="hint">Multiple active profiles are supported. Make their match conditions mutually exclusive so a client receives one unambiguous result.</p>
   </article>
 </section>
-<section class="profile-list">
-  <article>
-    <h2>Configured profiles</h2>
-    {% if profiles %}
-      {% for profile in profiles %}
-      <section class="profile-row">
-        <div><span class="badge {{ 'ok' if profile.enabled else 'neutral' }}">{{ 'Enabled' if profile.enabled else 'Disabled' }}</span><h3>{{ profile.name }}</h3><p>{{ stages[profile.stage].label }}</p></div>
-        <dl class="artifact-meta">
-          <div><dt>Client match</dt><dd>{{ match_summary(profile) }}</dd></div>
-          <div><dt>DHCP response</dt><dd>{{ stages[profile.stage].response }}</dd></div>
-        </dl>
-        <div>
-          {% set artifact = artifact_map.get(profile.artifact_id) %}
-          {% if artifact %}<a href="{{ artifact_url(artifact) }}">#{{ artifact.id }} · {{ artifact.original_name }}</a><code class="artifact-url">{{ artifact_url(artifact) }}</code>{% else %}<span class="badge neutral">Artifact unavailable</span>{% endif %}
-          {% if profile.comment %}<p class="profile-comment">{{ profile.comment }}</p>{% endif %}
-        </div>
-        <form method="post" action="/profiles/{{ profile.id }}/toggle"><button class="compact secondary" type="submit">{{ 'Disable' if profile.enabled else 'Enable' }}</button></form>
-      </section>
-      {% endfor %}
-    {% else %}<p class="empty">No provisioning profiles configured.</p>{% endif %}
-  </article>
-</section>
+
+<section class="profile-list"><article><h2>Configured profiles</h2>
+{% if profiles %}{% for profile in profiles %}
+  <section class="profile-row">
+    <div><span class="badge {{ 'ok' if profile.enabled else 'neutral' }}">{{ 'Enabled' if profile.enabled else 'Disabled' }}</span><h3>{{ profile.name }}</h3><p>{{ stages[profile.stage].label }}</p></div>
+    <dl class="artifact-meta">
+      <div><dt>Client matches</dt><dd>{{ match_summary(profile_matches.get(profile.id, [])) }}</dd></div>
+      <div><dt>DHCP response</dt><dd>{{ stages[profile.stage].response }}</dd></div>
+    </dl>
+    <div>
+      {% if profile.stage == 'onie' %}{% set artifact = artifact_map.get(profile.artifact_id) %}{% if artifact %}<a href="{{ artifact_url(artifact) }}">#{{ artifact.id }} · {{ artifact.original_name }}</a><code class="artifact-url">{{ artifact_url(artifact) }}</code>{% endif %}
+      {% else %}<a href="{{ ztp_url(profile) }}">Generated ztp.json</a><code class="artifact-url">{{ ztp_url(profile) }}</code><ul class="section-list">{% if profile.firmware_artifact_id %}<li>01-firmware → #{{ profile.firmware_artifact_id }}</li>{% endif %}{% if profile.configdb_artifact_id %}<li>02-configdb-json → #{{ profile.configdb_artifact_id }}</li>{% endif %}{% if profile.script_artifact_id %}<li>03-provisioning-script → #{{ profile.script_artifact_id }}</li>{% endif %}</ul>{% endif %}
+      {% if profile.comment %}<p class="profile-comment">{{ profile.comment }}</p>{% endif %}
+    </div>
+    <form method="post" action="/profiles/{{ profile.id }}/toggle"><button class="compact secondary" type="submit">{{ 'Disable' if profile.enabled else 'Enable' }}</button></form>
+  </section>
+{% endfor %}{% else %}<p class="empty">No provisioning profiles configured.</p>{% endif %}
+</article></section>
+
+<template id="match-template"><div class="match-row"><select name="match_option"><option value="60">60 · Vendor Class</option><option value="61">61 · Client Identifier</option><option value="77">77 · User Class</option></select><select name="match_operator"><option value="starts_with">Starts with</option><option value="equals">Equals</option></select><input name="match_value" maxlength="255" required><button class="remove-match" type="button" aria-label="Remove match">×</button></div></template>
 <script>
 (() => {
-  const stage = document.querySelector('#profile-stage');
-  const option = document.querySelector('#match-option');
-  const operator = document.querySelector('#match-operator');
-  const value = document.querySelector('#match-value');
-  if (!stage || !option || !operator || !value) return;
-  stage.addEventListener('change', () => {
-    const selected = stage.options[stage.selectedIndex];
-    option.value = selected.dataset.option;
-    operator.value = selected.dataset.operator;
-    value.value = selected.dataset.value;
-  });
+  const stage = document.querySelector('#profile-stage'), list = document.querySelector('#match-list'), template = document.querySelector('#match-template');
+  if (!stage || !list || !template) return;
+  const add = (option='60', operator='starts_with', value='onie_vendor') => { const row=template.content.firstElementChild.cloneNode(true); row.querySelector('[name=match_option]').value=option; row.querySelector('[name=match_operator]').value=operator; row.querySelector('[name=match_value]').value=value; row.querySelector('.remove-match').onclick=()=>{ if(list.children.length>1) row.remove(); }; list.appendChild(row); };
+  const resetMatches = () => { list.replaceChildren(); if(stage.value==='sonic'){ add('61','starts_with','SONiC##'); add('77','equals','SONiC-ZTP'); } else add(); };
+  const syncStage = () => { const sonic=stage.value==='sonic'; document.querySelector('#sonic-fields').hidden=!sonic; document.querySelector('#onie-fields').hidden=sonic; document.querySelector('#profile-artifact').disabled=sonic; resetMatches(); };
+  document.querySelector('#add-match').onclick=()=>add('60','equals',''); stage.onchange=syncStage;
+  document.querySelectorAll('.section-toggle input').forEach(box=>box.onchange=()=>{ const select=document.querySelector('#'+box.dataset.target); select.disabled=!box.checked; if(box.checked && select.value==='0' && select.options.length>1) select.selectedIndex=1; });
+  syncStage();
 })();
 </script>
 {% endblock %}

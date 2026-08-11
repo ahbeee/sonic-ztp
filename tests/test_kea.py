@@ -3,8 +3,8 @@ from dataclasses import replace
 
 from app.services.kea import KeaProvider
 from app.settings import settings
-from app.models import Artifact, ConfigRevision, ProvisioningProfile
-from app.services.profiles import build_candidate, match_expression
+from app.models import Artifact, ConfigRevision, ProfileMatch, ProvisioningProfile
+from app.services.profiles import build_candidate, generated_ztp, match_expression
 
 
 def test_default_config_is_inert_and_bound():
@@ -38,15 +38,26 @@ def test_sonic_profile_uses_option_67():
     provider = KeaProvider(settings)
     current = ConfigRevision(content=json.dumps(provider.default_config()))
     artifact = Artifact(id=9, original_name="ztp.json", stored_name="x.json", size=1, sha256="0" * 64)
-    profile = ProvisioningProfile(id=2, name="sonic", stage="sonic", artifact_id=9, match_option=77, match_operator="equals", match_value="SONiC-ZTP")
-    revision = build_candidate(current, [profile], {9: artifact}, settings, provider)
+    profile = ProvisioningProfile(id=2, name="sonic", stage="sonic", artifact_id=0, configdb_artifact_id=9)
+    matches = [ProfileMatch(id=1, profile_id=2, option_code=77, operator="equals", value="SONiC-ZTP", position=0)]
+    revision = build_candidate(current, [profile], matches, {9: artifact}, settings, provider)
     option = json.loads(revision.content)["Dhcp4"]["client-classes"][0]["option-data"][0]
     assert option["name"] == "boot-file-name"
-    assert option["data"].endswith("/files/9/ztp.json")
+    assert option["data"].endswith("/ztp/2/ztp.json")
 
 
 def test_match_expression_supports_configurable_option_60_and_77():
-    option60 = ProvisioningProfile(match_option=60, match_operator="starts_with", match_value="vendor_custom")
-    assert match_expression(option60) == "substring(option[60].text,0,13) == 'vendor_custom'"
-    option77 = ProvisioningProfile(match_option=77, match_operator="equals", match_value="SONiC-ZTP")
-    assert match_expression(option77) == "option[77].hex == 0x09534f4e69432d5a5450"
+    option60 = ProfileMatch(profile_id=1, option_code=60, operator="starts_with", value="vendor_custom", position=0)
+    assert match_expression([option60]) == "(substring(option[60].text,0,13) == 'vendor_custom')"
+    option61 = ProfileMatch(profile_id=1, option_code=61, operator="starts_with", value="SONiC##", position=0)
+    option77 = ProfileMatch(profile_id=1, option_code=77, operator="equals", value="SONiC-ZTP", position=1)
+    expression = match_expression([option61, option77])
+    assert "option[61]" in expression and "option[77]" in expression and " and " in expression
+
+
+def test_generates_configdb_only_ztp_json():
+    artifact = Artifact(id=9, original_name="config_db.json", stored_name="x.json", size=1, sha256="0" * 64)
+    profile = ProvisioningProfile(id=4, name="leaf", stage="sonic", artifact_id=0, configdb_artifact_id=9)
+    document = generated_ztp(profile, {9: artifact}, settings)
+    assert list(document["ztp"]) == ["02-configdb-json"]
+    assert document["ztp"]["02-configdb-json"]["url"]["source"].endswith("/files/9/config_db.json")

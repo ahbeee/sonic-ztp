@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import desc, select
@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, init_database
-from app.models import Artifact, AuditEvent, ConfigRevision, ProvisioningProfile
+from app.models import Artifact, AuditEvent, ConfigRevision, ProfileMatch, ProvisioningProfile
 from app.services.artifacts import store_stream
 from app.services.kea import KeaProvider
 from app.services.profiles import (
@@ -20,8 +20,11 @@ from app.services.profiles import (
     STAGES,
     artifact_url,
     build_candidate,
+    generated_ztp,
+    group_matches,
     match_summary,
     validate_match,
+    ztp_url,
 )
 from app.settings import settings
 
@@ -51,8 +54,9 @@ def latest_revision(session: Session) -> ConfigRevision:
 
 def regenerate_profile_candidate(session: Session) -> ConfigRevision:
     profiles = session.scalars(select(ProvisioningProfile).order_by(ProvisioningProfile.id)).all()
+    matches = session.scalars(select(ProfileMatch).order_by(ProfileMatch.profile_id, ProfileMatch.position)).all()
     artifacts = {item.id: item for item in session.scalars(select(Artifact)).all()}
-    revision = build_candidate(latest_revision(session), profiles, artifacts, settings, kea)
+    revision = build_candidate(latest_revision(session), profiles, matches, artifacts, settings, kea)
     session.add(revision)
     session.flush()
     session.add(AuditEvent(
@@ -191,6 +195,7 @@ def profiles_page(request: Request, session: Session = Depends(get_session)):
     profiles = session.scalars(select(ProvisioningProfile).order_by(desc(ProvisioningProfile.id))).all()
     artifacts = session.scalars(select(Artifact).where(Artifact.enabled.is_(True)).order_by(desc(Artifact.id))).all()
     artifact_map = {item.id: item for item in artifacts}
+    matches = session.scalars(select(ProfileMatch).order_by(ProfileMatch.profile_id, ProfileMatch.position)).all()
     return templates.TemplateResponse("profiles.html", {
         "request": request,
         "profiles": profiles,
@@ -199,8 +204,10 @@ def profiles_page(request: Request, session: Session = Depends(get_session)):
         "stages": STAGES,
         "match_options": MATCH_OPTIONS,
         "match_operators": MATCH_OPERATORS,
+        "profile_matches": group_matches(matches),
         "match_summary": match_summary,
         "artifact_url": lambda item: artifact_url(settings, item),
+        "ztp_url": lambda item: ztp_url(settings, item),
         "revision": latest_revision(session),
     })
 
@@ -209,43 +216,49 @@ def profiles_page(request: Request, session: Session = Depends(get_session)):
 def create_profile(
     name: str = Form(...),
     stage: str = Form(...),
-    artifact_id: int = Form(...),
-    match_option: int = Form(0),
-    match_operator: str = Form(""),
-    match_value: str = Form(""),
+    artifact_id: int = Form(0),
+    match_option: list[int] = Form(...),
+    match_operator: list[str] = Form(...),
+    match_value: list[str] = Form(...),
+    firmware_artifact_id: int = Form(0),
+    configdb_artifact_id: int = Form(0),
+    script_artifact_id: int = Form(0),
     comment: str = Form(""),
     session: Session = Depends(get_session),
 ):
     clean_name = name.strip()
-    artifact = session.get(Artifact, artifact_id)
     if not clean_name or len(clean_name) > 120:
         raise HTTPException(status_code=422, detail="Profile name is required and must not exceed 120 characters")
     if stage not in STAGES:
         raise HTTPException(status_code=422, detail="Unsupported provisioning stage")
-    stage_defaults = STAGES[stage]
-    selected_option = match_option or stage_defaults["default_option"]
-    selected_operator = match_operator or stage_defaults["default_operator"]
-    selected_value = match_value.strip() or stage_defaults["default_value"]
-    try:
-        validate_match(selected_option, selected_operator, selected_value)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
-    if artifact is None or not artifact.enabled:
-        raise HTTPException(status_code=422, detail="Selected artifact is unavailable")
-    for existing in session.scalars(
-        select(ProvisioningProfile).where(
-            ProvisioningProfile.stage == stage,
-            ProvisioningProfile.enabled.is_(True),
-        )
-    ):
-        existing.enabled = False
+    if not (len(match_option) == len(match_operator) == len(match_value)) or not match_option:
+        raise HTTPException(status_code=422, detail="Client match fields are incomplete")
+    conditions = []
+    for position, (option, operator, value) in enumerate(zip(match_option, match_operator, match_value)):
+        clean_value = value.strip()
+        try:
+            validate_match(option, operator, clean_value)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="Match {}: {}".format(position + 1, exc))
+        conditions.append((option, operator, clean_value, position))
+    selected_ids = [item for item in (artifact_id, firmware_artifact_id, configdb_artifact_id, script_artifact_id) if item]
+    available = {item.id for item in session.scalars(select(Artifact).where(Artifact.id.in_(selected_ids))).all()} if selected_ids else set()
+    if any(item not in available for item in selected_ids):
+        raise HTTPException(status_code=422, detail="One or more selected artifacts are unavailable")
+    if stage == "onie" and not artifact_id:
+        raise HTTPException(status_code=422, detail="ONIE profile requires a NOS image")
+    if stage == "sonic" and not any((firmware_artifact_id, configdb_artifact_id, script_artifact_id)):
+        raise HTTPException(status_code=422, detail="SONiC profile requires at least one ZTP section")
     profile = ProvisioningProfile(
         name=clean_name,
         stage=stage,
-        artifact_id=artifact.id,
-        match_option=selected_option,
-        match_operator=selected_operator,
-        match_value=selected_value,
+        artifact_id=artifact_id,
+        match_option=conditions[0][0],
+        match_operator=conditions[0][1],
+        match_value=conditions[0][2],
+        firmware_artifact_id=firmware_artifact_id or None,
+        configdb_artifact_id=configdb_artifact_id or None,
+        script_artifact_id=script_artifact_id or None,
         comment=comment.strip()[:4000],
     )
     session.add(profile)
@@ -254,6 +267,9 @@ def create_profile(
     except IntegrityError:
         session.rollback()
         raise HTTPException(status_code=409, detail="Profile name already exists")
+    for option, operator, value, position in conditions:
+        session.add(ProfileMatch(profile_id=profile.id, option_code=option, operator=operator, value=value, position=position))
+    session.flush()
     revision = regenerate_profile_candidate(session)
     session.add(AuditEvent(action="profile.create", outcome="success", detail="profile={} revision={}".format(profile.id, revision.id)))
     session.commit()
@@ -266,19 +282,25 @@ def toggle_profile(profile_id: int, session: Session = Depends(get_session)):
     if profile is None:
         raise HTTPException(status_code=404, detail="Profile not found")
     enabling = not profile.enabled
-    if enabling:
-        for existing in session.scalars(
-            select(ProvisioningProfile).where(
-                ProvisioningProfile.stage == profile.stage,
-                ProvisioningProfile.enabled.is_(True),
-            )
-        ):
-            existing.enabled = False
     profile.enabled = enabling
     revision = regenerate_profile_candidate(session)
     session.add(AuditEvent(action="profile.toggle", outcome="success", detail="profile={} enabled={} revision={}".format(profile.id, profile.enabled, revision.id)))
     session.commit()
     return RedirectResponse("/profiles", status_code=303)
+
+
+@app.get("/ztp/{profile_id}/ztp.json")
+def serve_generated_ztp(profile_id: int, session: Session = Depends(get_session)):
+    profile = session.get(ProvisioningProfile, profile_id)
+    if profile is None or profile.stage != "sonic" or not profile.enabled:
+        raise HTTPException(status_code=404, detail="ZTP profile not found")
+    ids = [item for item in (profile.firmware_artifact_id, profile.configdb_artifact_id, profile.script_artifact_id) if item]
+    artifacts = {
+        item.id: item for item in session.scalars(
+            select(Artifact).where(Artifact.id.in_(ids), Artifact.enabled.is_(True))
+        ).all()
+    }
+    return JSONResponse(generated_ztp(profile, artifacts, settings))
 
 
 @app.post("/artifacts")

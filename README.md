@@ -8,7 +8,8 @@ The current milestone provides:
 - a server-rendered dashboard
 - Kea DHCP status, draft configuration, binary validation, revision history, restore, and lease visibility
 - GUI provisioning profiles that generate Kea client classes for ONIE option 114 and SONiC ZTP option 67
-- Configurable client matching for DHCP option 60 or 77 with Equals and Starts with comparisons
+- Multiple AND-combined client matches using DHCP option 60, 61, or 77
+- Per-profile Enterprise SONiC ztp.json generation with optional firmware, config_db, and provisioning-script sections
 - safe artifact upload, editable comments, SHA-256 calculation, and HTTP download
 - SQLite persistence and audit events
 - systemd deployment for Ubuntu
@@ -44,4 +45,5 @@ Useful endpoints:
 - Reusing an original filename creates a separate artifact; older uploads are never overwritten.
 - Provisioning references use immutable `/files/{artifact-id}/{filename}` URLs, so duplicate original names remain unambiguous.
 - Kea candidate files use `/etc/kea/sonic-ztp`, which works with Ubuntu's default AppArmor profile without weakening it.
+- Multiple active profiles may route distinct device identities to distinct generated ztp.json documents.
 - Profile changes create validated candidate revisions only; applying configuration and controlling DHCP remain locked.
