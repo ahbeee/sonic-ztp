@@ -23,7 +23,13 @@
 </section>
 
 <section class="grid two">
-  <article><h2>Candidate revision #{{ revision.id }}</h2><details><summary>Advanced: edit raw Kea JSON</summary><form method="post" action="/dhcp/draft"><textarea name="content" spellcheck="false">{{ revision.content }}</textarea><button type="submit">Save new revision</button></form></details><form class="inline no-offset" method="post" action="/dhcp/validate"><button class="secondary" type="submit">Validate with Kea</button></form><pre class="result">{{ revision.validation_output }}</pre></article>
+  <article><h2>Kea DHCP candidate #{{ revision.id }}</h2>
+    <dl class="kea-meta"><div><dt>Service</dt><dd>{{ status.service }}</dd></div><div><dt>Binary</dt><dd>{{ status.binary }}</dd></div><div><dt>Installed</dt><dd>{{ 'Yes' if status.installed else 'No' }}</dd></div><div><dt>Enabled at boot</dt><dd>{{ 'Yes' if status.enabled else 'No' }}</dd></div></dl>
+    <p class="hint">This is the complete generated Kea configuration. It includes the DHCP scope and all ONIE / Enterprise SONiC client-class rules.</p>
+    <pre class="kea-json">{{ revision.content }}</pre>
+    <details><summary>Advanced: edit raw Kea JSON</summary><form method="post" action="/dhcp/draft"><textarea name="content" spellcheck="false">{{ revision.content }}</textarea><button type="submit">Save new revision</button></form></details>
+    <form class="inline no-offset" method="post" action="/dhcp/validate"><button class="secondary" type="submit">Validate with Kea</button></form><pre class="result">{{ revision.validation_output }}</pre>
+  </article>
   <article><h2>Revision history</h2><table><thead><tr><th>ID</th><th>Created</th><th>Status</th><th></th></tr></thead><tbody>{% for item in revisions %}<tr><td>#{{ item.id }}</td><td>{{ item.created_at }}</td><td>{{ 'valid' if item.is_valid else 'draft' }}</td><td>{% if item.id != revision.id %}<form method="post" action="/dhcp/revisions/{{ item.id }}/restore"><button class="compact secondary" type="submit">Restore</button></form>{% endif %}</td></tr>{% endfor %}</tbody></table></article>
 </section>
 <section><article><h2>Active leases</h2>{% if leases %}<table><thead><tr><th>Address</th><th>MAC</th><th>Hostname</th><th>Expires</th></tr></thead><tbody>{% for lease in leases %}<tr><td>{{ lease.address }}</td><td>{{ lease.hwaddr }}</td><td>{{ lease.hostname or '—' }}</td><td>{{ lease.expire }}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="empty">No active Kea leases. DHCP service remains stopped.</p>{% endif %}</article></section>

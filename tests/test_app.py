@@ -19,6 +19,9 @@ def test_dashboard_and_dhcp_pages():
         assert client.get("/dhcp").status_code == 200
         config = client.get("/api/dhcp/config").json()
         assert isinstance(config["content"]["Dhcp4"]["subnet4"], list)
+        dhcp_page = client.get("/dhcp")
+        assert "Kea DHCP candidate" in dhcp_page.text
+        assert 'interfaces-config' in dhcp_page.text
         leases = client.get("/api/dhcp/leases").json()
         assert "leases" in leases
 
