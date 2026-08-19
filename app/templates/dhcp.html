@@ -6,7 +6,7 @@
 <section class="readiness-panel {{ 'ready' if readiness|selectattr('ready')|list|length == readiness|length else 'warning' }}">
   <div><h2>Before DHCP can start</h2><p>The service remains locked until every required item is complete.</p></div>
   <ul>{% for item in readiness %}<li><span class="check {{ 'ok' if item.ready else 'missing' }}">{{ '✓' if item.ready else '!' }}</span>{{ item.label }}</li>{% endfor %}</ul>
-  <div class="locked-actions"><button type="button" disabled title="Write the validated candidate to Kea's live configuration file">Apply candidate</button><button type="button" disabled title="Start the Kea DHCPv4 system service">Start DHCP</button><small>Apply writes the validated candidate to Kea. Start launches the DHCP service. Both are not implemented yet.</small></div>
+  <div class="locked-actions"><form method="post" action="/dhcp/apply"><button type="submit" title="Validate and write the candidate to Kea's live configuration file">Apply candidate</button></form><button type="button" disabled title="Start the Kea DHCPv4 system service">Start DHCP</button><small>Apply validates first and writes the file only when validation succeeds. Start DHCP is not implemented yet.</small></div>
 </section>
 
 <section class="grid two">
@@ -16,20 +16,19 @@
     <label for="gateway">Gateway (optional)</label><input id="gateway" name="gateway" value="{{ scope.gateway if scope else '' }}" placeholder="Leave empty for isolated Host-Only lab">
     <label for="dns">DNS servers (optional, comma separated)</label><input id="dns" name="dns_servers" value="{{ scope.dns_servers if scope else '' }}" placeholder="e.g. 8.8.8.8, 1.1.1.1">
     <label for="lease-time">Lease time (seconds)</label><input id="lease-time" name="lease_time" type="number" min="60" max="604800" value="{{ scope.lease_time if scope else 600 }}" required>
-    <p class="hint">The pool must not contain the ZTP server {{ settings.provisioning_address }}. Save generates a new Kea JSON revision, checks its structure and runs <code>kea-dhcp4 -t</code>. It does not apply the file or start DHCP.</p>
-    <button type="submit">Save scope and validate</button>
+    <p class="hint">The pool must not contain the ZTP server {{ settings.provisioning_address }}. Save updates the candidate JSON only; validation runs later when Apply candidate is selected.</p>
+    <button type="submit">Save scope</button>
   </form></article>
-  <article><h2>Current routing</h2><dl class="scope-summary"><div><dt>Interface</dt><dd>{{ settings.provisioning_interface }}</dd></div><div><dt>Server address</dt><dd>{{ settings.provisioning_address }}</dd></div><div><dt>Active profiles</dt><dd>{{ active_profiles }}</dd></div><div><dt>Candidate</dt><dd>#{{ revision.id }} · {{ 'Valid' if revision.is_valid else 'Not valid' }}</dd></div></dl><p class="hint">Provisioning Profiles control which ONIE image or generated ztp.json each matched client receives.</p><a href="/profiles">Manage provisioning profiles →</a></article>
+  <article><h2>Current routing</h2><dl class="scope-summary"><div><dt>Interface</dt><dd>{{ settings.provisioning_interface }}</dd></div><div><dt>Server address</dt><dd>{{ settings.provisioning_address }}</dd></div><div><dt>Active profiles</dt><dd>{{ active_profiles }}</dd></div><div><dt>Candidate status</dt><dd>{{ 'Applied' if revision.applied else 'Not applied' }}</dd></div></dl><p class="hint">Provisioning Profiles control which ONIE image or generated ztp.json each matched client receives.</p><a href="/profiles">Manage provisioning profiles →</a></article>
 </section>
 
-<section class="grid two">
-  <article><h2>Kea DHCP candidate #{{ revision.id }}</h2>
+<section>
+  <article><h2>Kea DHCP candidate</h2>
     <dl class="kea-meta"><div><dt>Service</dt><dd>{{ status.service }}</dd></div><div><dt>Binary</dt><dd>{{ status.binary }}</dd></div><div><dt>Installed</dt><dd>{{ 'Yes' if status.installed else 'No' }}</dd></div><div><dt>Enabled at boot</dt><dd>{{ 'Yes' if status.enabled else 'No' }}</dd></div></dl>
     <p class="hint">This editable JSON is the complete generated candidate, including scope and ONIE / Enterprise SONiC client-class rules. Saving it creates a revision but does not change the running Kea service.</p>
-    <form method="post" action="/dhcp/draft"><textarea name="content" spellcheck="false">{{ revision.content }}</textarea><button type="submit">Save JSON as new revision</button></form>
-    <form class="inline no-offset" method="post" action="/dhcp/validate"><button class="secondary" type="submit">Validate with Kea</button></form><p class="hint">Checks JSON semantics and asks the installed Kea binary to parse it with <code>kea-dhcp4 -t</code>. Nothing is applied or started.</p><pre class="result">{{ revision.validation_output }}</pre>
+    <form method="post" action="/dhcp/draft"><textarea name="content" spellcheck="false">{{ revision.content }}</textarea><button type="submit">Save JSON</button></form>
+    <p class="hint">Apply candidate checks JSON semantics and runs <code>kea-dhcp4 -t</code>. Validation errors are shown below and the live file remains unchanged.</p><pre class="result">{{ revision.validation_output }}</pre>
   </article>
-  <article><h2>Revision history</h2><p class="hint">Every scope or raw JSON save creates a snapshot. Use Restore to copy an older snapshot into a new draft; it never changes the running Kea service by itself.</p><table><thead><tr><th>ID</th><th>Created</th><th>Status</th><th></th></tr></thead><tbody>{% for item in revisions %}<tr><td>#{{ item.id }}</td><td>{{ item.created_at }}</td><td>{{ 'valid' if item.is_valid else 'draft' }}</td><td>{% if item.id != revision.id %}<form method="post" action="/dhcp/revisions/{{ item.id }}/restore"><button class="compact secondary" type="submit">Restore</button></form>{% endif %}</td></tr>{% endfor %}</tbody></table></article>
 </section>
 <section><article><h2>Active leases</h2>{% if leases %}<table><thead><tr><th>Address</th><th>MAC</th><th>Hostname</th><th>Expires</th></tr></thead><tbody>{% for lease in leases %}<tr><td>{{ lease.address }}</td><td>{{ lease.hwaddr }}</td><td>{{ lease.hostname or '—' }}</td><td>{{ lease.expire }}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="empty">No active Kea leases. DHCP service remains stopped.</p>{% endif %}</article></section>
 {% endblock %}

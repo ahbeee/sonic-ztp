@@ -2,7 +2,7 @@ import io
 
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.main import app, kea
 
 
 def test_health():
@@ -22,8 +22,10 @@ def test_dashboard_and_dhcp_pages():
         dhcp_page = client.get("/dhcp")
         assert "Kea DHCP candidate" in dhcp_page.text
         assert 'interfaces-config' in dhcp_page.text
-        assert "Nothing is applied or started" in dhcp_page.text
-        assert "Save JSON as new revision" in dhcp_page.text
+        assert "Validation errors are shown below" in dhcp_page.text
+        assert "Save JSON" in dhcp_page.text
+        assert "Revision history" not in dhcp_page.text
+        assert "Save scope and validate" not in dhcp_page.text
         leases = client.get("/api/dhcp/leases").json()
         assert "leases" in leases
 
@@ -124,6 +126,20 @@ def test_scope_form_generates_subnet_and_pool():
         assert subnet["subnet"] == "192.168.56.0/24"
         assert subnet["pools"] == [{"pool": "192.168.56.101 - 192.168.56.199"}]
         assert subnet["option-data"][0]["name"] == "domain-name-servers"
+        assert client.get("/api/dhcp/config").json()["is_valid"] is False
+
+
+def test_apply_validates_before_writing(monkeypatch):
+    applied = []
+    monkeypatch.setattr(kea, "binary_validate", lambda content: (True, "Configuration is valid"))
+    monkeypatch.setattr(kea, "apply_config", lambda content: applied.append(content))
+    with TestClient(app) as client:
+        response = client.post("/dhcp/apply", follow_redirects=False)
+        assert response.status_code == 303
+        state = client.get("/api/dhcp/config").json()
+        assert state["is_valid"] is True
+        assert state["applied"] is True
+        assert len(applied) == 1
 
 
 def test_scope_rejects_server_address_inside_pool():

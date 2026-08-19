@@ -111,6 +111,26 @@ class KeaProvider:
         finally:
             Path(handle.name).unlink(missing_ok=True)
 
+    def apply_config(self, normalized_content: str) -> None:
+        target = self.settings.kea_config_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        handle = tempfile.NamedTemporaryFile(
+            mode="w",
+            suffix=".json",
+            prefix="kea-applied-",
+            dir=str(target.parent),
+            delete=False,
+        )
+        try:
+            handle.write(normalized_content)
+            handle.flush()
+            os.fsync(handle.fileno())
+            handle.close()
+            os.chmod(handle.name, 0o640)
+            os.replace(handle.name, target)
+        finally:
+            Path(handle.name).unlink(missing_ok=True)
+
     def leases(self) -> List[Dict[str, str]]:
         path = self.settings.kea_lease_file
         if not path.is_file():

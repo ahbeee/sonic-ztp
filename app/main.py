@@ -160,7 +160,6 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
 
 @app.get("/dhcp", response_class=HTMLResponse)
 def dhcp_page(request: Request, session: Session = Depends(get_session)):
-    revisions = session.scalars(select(ConfigRevision).order_by(desc(ConfigRevision.id)).limit(10)).all()
     revision = latest_revision(session)
     scope = session.get(DhcpScope, 1)
     active_profiles = len(session.scalars(select(ProvisioningProfile).where(ProvisioningProfile.enabled.is_(True))).all())
@@ -168,7 +167,7 @@ def dhcp_page(request: Request, session: Session = Depends(get_session)):
         "dhcp.html",
         {"request": request, "status": kea.status(), "revision": revision, "scope": scope,
         "readiness": scope_readiness(scope, revision, active_profiles), "active_profiles": active_profiles,
-        "revisions": revisions, "leases": kea.leases(), "settings": settings},
+        "leases": kea.leases(), "settings": settings},
     )
 
 
@@ -211,13 +210,11 @@ def save_dhcp_scope(
     scope.dns_servers = ", ".join(str(item) for item in dns)
     scope.lease_time = lease_time
     content = scope_candidate(latest_revision(session), scope)
-    normalized, semantic_errors = kea.normalize_and_check(content)
-    valid, output = (False, "; ".join(semantic_errors)) if semantic_errors else kea.binary_validate(normalized)
-    revision = ConfigRevision(content=normalized, is_valid=valid, validation_output=output)
+    revision = ConfigRevision(content=content, is_valid=False, validation_output="Saved; validation will run when Apply candidate is selected")
     session.add(scope)
     session.add(revision)
     session.flush()
-    session.add(AuditEvent(action="dhcp.scope", outcome="success" if valid else "failed", detail="revision={} subnet={}".format(revision.id, scope.subnet)))
+    session.add(AuditEvent(action="dhcp.scope", outcome="success", detail="revision={} subnet={}".format(revision.id, scope.subnet)))
     session.commit()
     return RedirectResponse("/dhcp", status_code=303)
 
@@ -239,17 +236,29 @@ def save_dhcp_draft(content: str = Form(...), session: Session = Depends(get_ses
     return RedirectResponse("/dhcp", status_code=303)
 
 
-@app.post("/dhcp/validate")
-def validate_dhcp(session: Session = Depends(get_session)):
+@app.post("/dhcp/apply")
+def apply_dhcp_candidate(session: Session = Depends(get_session)):
     revision = latest_revision(session)
-    normalized, semantic_errors = kea.normalize_and_check(revision.content)
-    if semantic_errors:
-        valid, output = False, "; ".join(semantic_errors)
-    else:
-        valid, output = kea.binary_validate(normalized)
+    try:
+        normalized, semantic_errors = kea.normalize_and_check(revision.content)
+        valid, output = (False, "; ".join(semantic_errors)) if semantic_errors else kea.binary_validate(normalized)
+    except (json.JSONDecodeError, ValueError) as exc:
+        normalized, valid, output = revision.content, False, "Invalid JSON: {}".format(exc)
     revision.is_valid = valid
+    revision.applied = False
     revision.validation_output = output
-    session.add(AuditEvent(action="dhcp.validate", outcome="success" if valid else "failed", detail=output))
+    if valid:
+        try:
+            kea.apply_config(normalized)
+            revision.content = normalized
+            revision.applied = True
+            output = "Validation passed and candidate applied to {}".format(settings.kea_config_path)
+            revision.validation_output = output
+        except OSError as exc:
+            revision.applied = False
+            output = "Validation passed but apply failed: {}".format(exc)
+            revision.validation_output = output
+    session.add(AuditEvent(action="dhcp.apply", outcome="success" if revision.applied else "failed", detail=output))
     session.commit()
     return RedirectResponse("/dhcp", status_code=303)
 

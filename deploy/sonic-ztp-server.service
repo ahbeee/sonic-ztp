@@ -11,6 +11,7 @@ WorkingDirectory=/home/ahbee/sonic-ztp-server
 Environment=ZTP_BASE_DIR=/home/ahbee/sonic-ztp-server
 Environment=ZTP_PROVISION_INTERFACE=enp0s8
 Environment=ZTP_PROVISION_ADDRESS=192.168.56.200
+Environment=ZTP_KEA_CONFIG=/etc/kea/sonic-ztp/kea-dhcp4.conf
 Environment=ZTP_ALLOW_SERVICE_CONTROL=false
 ExecStart=/home/ahbee/sonic-ztp-server/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8080
 Restart=on-failure

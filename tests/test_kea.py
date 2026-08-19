@@ -34,6 +34,13 @@ def test_reads_only_active_leases(tmp_path):
     assert leases[0]["hostname"] == "onie"
 
 
+def test_apply_config_replaces_target(tmp_path):
+    target = tmp_path / "kea-dhcp4.conf"
+    provider = KeaProvider(replace(settings, kea_config_path=target))
+    provider.apply_config('{"Dhcp4": {}}')
+    assert target.read_text() == '{"Dhcp4": {}}'
+
+
 def test_sonic_profile_uses_option_67():
     provider = KeaProvider(settings)
     current = ConfigRevision(content=json.dumps(provider.default_config()))
