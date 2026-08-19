@@ -22,6 +22,8 @@ def test_dashboard_and_dhcp_pages():
         dhcp_page = client.get("/dhcp")
         assert "Kea DHCP candidate" in dhcp_page.text
         assert 'interfaces-config' in dhcp_page.text
+        assert "Nothing is applied or started" in dhcp_page.text
+        assert "Save JSON as new revision" in dhcp_page.text
         leases = client.get("/api/dhcp/leases").json()
         assert "leases" in leases
 
