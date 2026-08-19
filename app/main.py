@@ -1,5 +1,6 @@
 import json
 import ipaddress
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -12,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, init_database
-from app.models import Artifact, AuditEvent, ConfigRevision, DhcpScope, ProfileMatch, ProvisioningProfile
+from app.models import Artifact, AuditEvent, ConfigRevision, DhcpReservation, DhcpScope, ProfileMatch, ProvisioningProfile
 from app.services.artifacts import store_stream
 from app.services.kea import KeaProvider
 from app.services.profiles import (
@@ -77,7 +78,7 @@ def scope_readiness(scope: DhcpScope | None, revision: ConfigRevision, active_pr
     ]
 
 
-def scope_candidate(revision: ConfigRevision, scope: DhcpScope) -> str:
+def scope_candidate(revision: ConfigRevision, scope: DhcpScope, reservations: list[DhcpReservation] | None = None) -> str:
     config = json.loads(revision.content)
     dhcp4 = config["Dhcp4"]
     option_data = []
@@ -93,6 +94,14 @@ def scope_candidate(revision: ConfigRevision, scope: DhcpScope) -> str:
         "subnet": scope.subnet,
         "pools": [{"pool": "{} - {}".format(scope.pool_start, scope.pool_end)}],
     }
+    if reservations:
+        subnet["reservations"] = [
+            dict(
+                {"hw-address": item.hw_address, "ip-address": item.ip_address},
+                **({"hostname": item.hostname} if item.hostname else {}),
+            )
+            for item in reservations
+        ]
     if option_data:
         subnet["option-data"] = option_data
     dhcp4["subnet4"] = [subnet]
@@ -162,12 +171,13 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
 def dhcp_page(request: Request, session: Session = Depends(get_session)):
     revision = latest_revision(session)
     scope = session.get(DhcpScope, 1)
+    reservations = session.scalars(select(DhcpReservation).order_by(DhcpReservation.ip_address)).all()
     active_profiles = len(session.scalars(select(ProvisioningProfile).where(ProvisioningProfile.enabled.is_(True))).all())
     return templates.TemplateResponse(
         "dhcp.html",
         {"request": request, "status": kea.status(), "revision": revision, "scope": scope,
         "readiness": scope_readiness(scope, revision, active_profiles), "active_profiles": active_profiles,
-        "leases": kea.leases(), "settings": settings},
+        "reservations": reservations, "leases": kea.leases(), "settings": settings},
     )
 
 
@@ -209,12 +219,78 @@ def save_dhcp_scope(
     scope.gateway = str(gateway_ip) if gateway_ip else ""
     scope.dns_servers = ", ".join(str(item) for item in dns)
     scope.lease_time = lease_time
-    content = scope_candidate(latest_revision(session), scope)
+    reservations = session.scalars(select(DhcpReservation).order_by(DhcpReservation.id)).all()
+    content = scope_candidate(latest_revision(session), scope, reservations)
     revision = ConfigRevision(content=content, is_valid=False, validation_output="Saved; validation will run when Apply candidate is selected")
     session.add(scope)
     session.add(revision)
     session.flush()
     session.add(AuditEvent(action="dhcp.scope", outcome="success", detail="revision={} subnet={}".format(revision.id, scope.subnet)))
+    session.commit()
+    return RedirectResponse("/dhcp", status_code=303)
+
+
+@app.post("/dhcp/reservations")
+def add_dhcp_reservation(
+    hw_address: str = Form(...),
+    ip_address: str = Form(...),
+    hostname: str = Form(""),
+    session: Session = Depends(get_session),
+):
+    scope = session.get(DhcpScope, 1)
+    if scope is None:
+        raise HTTPException(status_code=422, detail="Save the DHCP scope before adding a reservation")
+    mac = hw_address.strip().lower().replace("-", ":")
+    if not re.fullmatch(r"(?:[0-9a-f]{2}:){5}[0-9a-f]{2}", mac):
+        raise HTTPException(status_code=422, detail="MAC address must use the format 52:54:00:12:34:56")
+    try:
+        address = ipaddress.ip_address(ip_address.strip())
+        network = ipaddress.ip_network(scope.subnet)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid reservation address: {}".format(exc))
+    if address.version != 4 or address not in network:
+        raise HTTPException(status_code=422, detail="Static IP must be an IPv4 address inside the DHCP subnet")
+    if address in (network.network_address, network.broadcast_address, ipaddress.ip_address(settings.provisioning_address)):
+        raise HTTPException(status_code=422, detail="Static IP cannot be the network, broadcast, or ZTP server address")
+    name = hostname.strip()
+    if name and (len(name) > 253 or not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?", name)):
+        raise HTTPException(status_code=422, detail="Hostname contains unsupported characters")
+    reservation = DhcpReservation(hw_address=mac, ip_address=str(address), hostname=name)
+    session.add(reservation)
+    try:
+        session.flush()
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="That MAC address or static IP is already reserved")
+    reservations = session.scalars(select(DhcpReservation).order_by(DhcpReservation.id)).all()
+    revision = ConfigRevision(
+        content=scope_candidate(latest_revision(session), scope, reservations),
+        is_valid=False,
+        validation_output="Reservation saved; validation will run when Apply candidate is selected",
+    )
+    session.add(revision)
+    session.add(AuditEvent(action="dhcp.reservation.add", outcome="success", detail="mac={} ip={}".format(mac, address)))
+    session.commit()
+    return RedirectResponse("/dhcp", status_code=303)
+
+
+@app.post("/dhcp/reservations/{reservation_id}/delete")
+def delete_dhcp_reservation(reservation_id: int, session: Session = Depends(get_session)):
+    reservation = session.get(DhcpReservation, reservation_id)
+    if reservation is None:
+        raise HTTPException(status_code=404, detail="Reservation not found")
+    detail = "mac={} ip={}".format(reservation.hw_address, reservation.ip_address)
+    session.delete(reservation)
+    session.flush()
+    scope = session.get(DhcpScope, 1)
+    if scope is not None:
+        reservations = session.scalars(select(DhcpReservation).order_by(DhcpReservation.id)).all()
+        session.add(ConfigRevision(
+            content=scope_candidate(latest_revision(session), scope, reservations),
+            is_valid=False,
+            validation_output="Reservation deleted; validation will run when Apply candidate is selected",
+        ))
+    session.add(AuditEvent(action="dhcp.reservation.delete", outcome="success", detail=detail))
     session.commit()
     return RedirectResponse("/dhcp", status_code=303)
 

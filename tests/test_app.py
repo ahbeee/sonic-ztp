@@ -142,6 +142,23 @@ def test_apply_validates_before_writing(monkeypatch):
         assert len(applied) == 1
 
 
+def test_static_reservation_is_added_to_candidate():
+    with TestClient(app) as client:
+        response = client.post("/dhcp/reservations", data={
+            "hw_address": "52-54-00-AA-BB-CC",
+            "ip_address": "192.168.56.50",
+            "hostname": "sonic-leaf-01",
+        }, follow_redirects=False)
+        assert response.status_code == 303
+        reservations = client.get("/api/dhcp/config").json()["content"]["Dhcp4"]["subnet4"][0]["reservations"]
+        assert any(item == {"hw-address": "52:54:00:aa:bb:cc", "ip-address": "192.168.56.50", "hostname": "sonic-leaf-01"} for item in reservations)
+        page = client.get("/dhcp")
+        assert "Static DHCP reservations" in page.text
+        assert "192.168.56.50" in page.text
+        delete_path = page.text.split('/dhcp/reservations/', 1)[1].split('/delete', 1)[0]
+        assert client.post(f"/dhcp/reservations/{delete_path}/delete", follow_redirects=False).status_code == 303
+
+
 def test_scope_rejects_server_address_inside_pool():
     with TestClient(app) as client:
         response = client.post("/dhcp/scope", data={

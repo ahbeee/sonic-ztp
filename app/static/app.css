@@ -33,3 +33,6 @@ table { width:100%; border-collapse:collapse; font-size:13px; }th,td { padding:1
 @media(max-width:620px){.field-pair{grid-template-columns:1fr}}
 .kea-meta { display:grid; grid-template-columns:1fr 1fr; gap:10px 18px; margin:0 0 18px; }.kea-meta div { min-width:0; }.kea-meta dt { color:var(--muted); font-size:12px; }.kea-meta dd { margin:2px 0 0; overflow-wrap:anywhere; }
 @media(max-width:620px){.kea-meta{grid-template-columns:1fr}}
+.reservation-form { display:grid; grid-template-columns:1fr 1fr 1fr auto; gap:12px; align-items:end; }.reservation-form label { margin-top:0; }.reservation-form button { margin:0; white-space:nowrap; }.reservation-table { margin-top:20px; }
+@media(max-width:850px){.reservation-form{grid-template-columns:1fr 1fr}.reservation-form button{justify-self:start}}
+@media(max-width:620px){.reservation-form{grid-template-columns:1fr}}

@@ -22,6 +22,17 @@
   <article><h2>Current routing</h2><dl class="scope-summary"><div><dt>Interface</dt><dd>{{ settings.provisioning_interface }}</dd></div><div><dt>Server address</dt><dd>{{ settings.provisioning_address }}</dd></div><div><dt>Active profiles</dt><dd>{{ active_profiles }}</dd></div><div><dt>Candidate status</dt><dd>{{ 'Applied' if revision.applied else 'Not applied' }}</dd></div></dl><p class="hint">Provisioning Profiles control which ONIE image or generated ztp.json each matched client receives.</p><a href="/profiles">Manage provisioning profiles →</a></article>
 </section>
 
+<section><article><h2>Static DHCP reservations</h2>
+  <p class="hint">Assign a fixed IPv4 address to a specific client MAC address. Save the DHCP scope first; reservations are added to the candidate and require Apply candidate to take effect.</p>
+  <form class="reservation-form" method="post" action="/dhcp/reservations">
+    <div><label for="reservation-mac">Client MAC address</label><input id="reservation-mac" name="hw_address" placeholder="52:54:00:12:34:56" required></div>
+    <div><label for="reservation-ip">Static IPv4 address</label><input id="reservation-ip" name="ip_address" placeholder="192.168.56.50" required></div>
+    <div><label for="reservation-hostname">Hostname (optional)</label><input id="reservation-hostname" name="hostname" placeholder="sonic-leaf-01"></div>
+    <button type="submit">Add static IP</button>
+  </form>
+  {% if reservations %}<table class="reservation-table"><thead><tr><th>MAC address</th><th>Static IP</th><th>Hostname</th><th></th></tr></thead><tbody>{% for item in reservations %}<tr><td>{{ item.hw_address }}</td><td>{{ item.ip_address }}</td><td>{{ item.hostname or '—' }}</td><td><form method="post" action="/dhcp/reservations/{{ item.id }}/delete"><button class="compact secondary" type="submit">Delete</button></form></td></tr>{% endfor %}</tbody></table>{% else %}<p class="empty">No static DHCP reservations.</p>{% endif %}
+</article></section>
+
 <section>
   <article><h2>Kea DHCP candidate</h2>
     <dl class="kea-meta"><div><dt>Service</dt><dd>{{ status.service }}</dd></div><div><dt>Binary</dt><dd>{{ status.binary }}</dd></div><div><dt>Installed</dt><dd>{{ 'Yes' if status.installed else 'No' }}</dd></div><div><dt>Enabled at boot</dt><dd>{{ 'Yes' if status.enabled else 'No' }}</dd></div></dl>

@@ -82,3 +82,13 @@ class DhcpScope(Base):
     dns_servers: Mapped[str] = mapped_column(String(255), default="")
     lease_time: Mapped[int] = mapped_column(Integer, default=600)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class DhcpReservation(Base):
+    __tablename__ = "dhcp_reservations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    hw_address: Mapped[str] = mapped_column(String(17), unique=True, index=True)
+    ip_address: Mapped[str] = mapped_column(String(45), unique=True, index=True)
+    hostname: Mapped[str] = mapped_column(String(255), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
