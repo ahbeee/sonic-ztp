@@ -39,6 +39,7 @@ def test_apply_config_replaces_target(tmp_path):
     provider = KeaProvider(replace(settings, kea_config_path=target))
     provider.apply_config('{"Dhcp4": {}}')
     assert target.read_text() == '{"Dhcp4": {}}'
+    assert target.stat().st_mode & 0o777 == 0o640
 
 
 def test_service_control_is_disabled_by_default():

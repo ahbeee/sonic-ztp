@@ -5,6 +5,8 @@ live_config=/etc/kea/kea-dhcp4.conf
 managed_config=/etc/kea/sonic-ztp/kea-dhcp4.conf
 backup_config=/etc/kea/kea-dhcp4.conf.pre-sonic-ztp
 
+chown ahbee:_kea /etc/kea/sonic-ztp
+chmod 2770 /etc/kea/sonic-ztp
 if [ ! -e "$backup_config" ]; then
     cp --dereference "$live_config" "$backup_config"
 fi
