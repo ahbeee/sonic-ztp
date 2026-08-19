@@ -90,6 +90,22 @@ def test_multiple_profiles_per_stage_remain_available():
         assert any(f"/files/{artifact_id}/new.bin" in item["option-data"][0]["data"] for item in onie_classes)
 
 
+def test_delete_profile_keeps_artifact_and_removes_client_class():
+    with TestClient(app) as client:
+        client.post("/artifacts", files={"file": ("delete-test.bin", io.BytesIO(b"keep"), "application/octet-stream")})
+        artifacts_page = client.get("/artifacts")
+        artifact_id = int(artifacts_page.text.split("Artifact #", 1)[1].split(" ", 1)[0])
+        profile_name = f"delete-test-{artifact_id}"
+        client.post("/profiles", data={"name": profile_name, "stage": "onie", "artifact_id": artifact_id, "match_option": "60", "match_operator": "equals", "match_value": profile_name})
+        profiles_page = client.get("/profiles")
+        delete_path = profiles_page.text.split('/delete"', 1)[0].rsplit('/profiles/', 1)[1]
+        assert client.post(f"/profiles/{delete_path}/delete", follow_redirects=False).status_code == 303
+        assert profile_name not in client.get("/profiles").text
+        assert client.get(f"/files/{artifact_id}/delete-test.bin").status_code == 200
+        classes = client.get("/api/dhcp/config").json()["content"]["Dhcp4"].get("client-classes", [])
+        assert all(profile_name not in item.get("test", "") for item in classes)
+
+
 def test_sonic_profile_generates_configdb_only_json():
     with TestClient(app) as client:
         client.post("/artifacts", files={"file": ("leaf_config_db.json", io.BytesIO(b'{"DEVICE_METADATA": {}}'), "application/json")})

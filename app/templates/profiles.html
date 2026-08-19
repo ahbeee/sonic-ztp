@@ -66,7 +66,7 @@
       {% else %}<a href="{{ ztp_url(profile) }}">Generated ztp.json</a><code class="artifact-url">{{ ztp_url(profile) }}</code><ul class="section-list">{% if profile.firmware_artifact_id %}<li>01-firmware → #{{ profile.firmware_artifact_id }}</li>{% endif %}{% if profile.configdb_artifact_id %}<li>02-configdb-json → #{{ profile.configdb_artifact_id }}</li>{% endif %}{% if profile.script_artifact_id %}<li>03-provisioning-script → #{{ profile.script_artifact_id }}</li>{% endif %}</ul>{% endif %}
       {% if profile.comment %}<p class="profile-comment">{{ profile.comment }}</p>{% endif %}
     </div>
-    <form method="post" action="/profiles/{{ profile.id }}/toggle"><button class="compact secondary" type="submit">{{ 'Disable' if profile.enabled else 'Enable' }}</button></form>
+    <div class="profile-actions"><form method="post" action="/profiles/{{ profile.id }}/toggle"><button class="compact secondary" type="submit">{{ 'Disable' if profile.enabled else 'Enable' }}</button></form><form method="post" action="/profiles/{{ profile.id }}/delete" onsubmit="return confirm('Delete this profile? Uploaded files will be kept.');"><button class="compact danger" type="submit">Delete</button></form></div>
   </section>
 {% endfor %}{% else %}<p class="empty">No provisioning profiles configured.</p>{% endif %}
 </article></section>

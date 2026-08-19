@@ -8,7 +8,7 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Upload
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import desc, select
+from sqlalchemy import delete, desc, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -484,6 +484,25 @@ def toggle_profile(profile_id: int, session: Session = Depends(get_session)):
     profile.enabled = enabling
     revision = regenerate_profile_candidate(session)
     session.add(AuditEvent(action="profile.toggle", outcome="success", detail="profile={} enabled={} revision={}".format(profile.id, profile.enabled, revision.id)))
+    session.commit()
+    return RedirectResponse("/profiles", status_code=303)
+
+
+@app.post("/profiles/{profile_id}/delete")
+def delete_profile(profile_id: int, session: Session = Depends(get_session)):
+    profile = session.get(ProvisioningProfile, profile_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    profile_name = profile.name
+    session.execute(delete(ProfileMatch).where(ProfileMatch.profile_id == profile_id))
+    session.delete(profile)
+    session.flush()
+    revision = regenerate_profile_candidate(session)
+    session.add(AuditEvent(
+        action="profile.delete",
+        outcome="success",
+        detail="profile={} name={} revision={}".format(profile_id, profile_name, revision.id),
+    ))
     session.commit()
     return RedirectResponse("/profiles", status_code=303)
 
