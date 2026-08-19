@@ -8,9 +8,13 @@ backup_config=/etc/kea/kea-dhcp4.conf.pre-sonic-ztp
 if [ ! -e "$backup_config" ]; then
     cp --dereference "$live_config" "$backup_config"
 fi
-cp --dereference "$live_config" "$managed_config"
+if [ ! -L "$live_config" ]; then
+    cp --dereference "$live_config" "$managed_config"
+fi
 chown ahbee:_kea "$managed_config"
 chmod 0640 "$managed_config"
 ln -sfn "$managed_config" "$live_config"
 install -m 0644 /home/ahbee/sonic-ztp-server/deploy/sonic-ztp-server.service /etc/systemd/system/sonic-ztp-server.service
+install -m 0440 /home/ahbee/sonic-ztp-server/deploy/sonic-ztp-kea-sudoers /etc/sudoers.d/sonic-ztp-kea
+visudo -cf /etc/sudoers.d/sonic-ztp-kea
 systemctl daemon-reload

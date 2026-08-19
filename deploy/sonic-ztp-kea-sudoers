@@ -1,0 +1,1 @@
+ahbee ALL=(root) NOPASSWD: /usr/bin/systemctl start kea-dhcp4-server.service, /usr/bin/systemctl stop kea-dhcp4-server.service, /usr/bin/systemctl restart kea-dhcp4-server.service

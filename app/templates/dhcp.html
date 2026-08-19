@@ -6,7 +6,7 @@
 <section class="readiness-panel {{ 'ready' if readiness|selectattr('ready')|list|length == readiness|length else 'warning' }}">
   <div><h2>Before DHCP can start</h2><p>The service remains locked until every required item is complete.</p></div>
   <ul>{% for item in readiness %}<li><span class="check {{ 'ok' if item.ready else 'missing' }}">{{ '✓' if item.ready else '!' }}</span>{{ item.label }}</li>{% endfor %}</ul>
-  <div class="locked-actions"><form method="post" action="/dhcp/apply"><button type="submit" title="Validate and write the candidate to Kea's live configuration file">Apply candidate</button></form><button type="button" disabled title="Start the Kea DHCPv4 system service">Start DHCP</button><small>Apply validates first and writes the file only when validation succeeds. Start DHCP is not implemented yet.</small></div>
+  <div class="locked-actions"><form method="post" action="/dhcp/apply"><button type="submit" title="Validate and write the candidate to Kea's live configuration file">Apply candidate</button></form>{% if status.active %}<form method="post" action="/dhcp/stop"><button class="danger" type="submit">Stop DHCP</button></form>{% else %}<form method="post" action="/dhcp/start"><button type="submit" {% if not revision.applied %}disabled title="Apply the candidate first"{% endif %}>Start DHCP</button></form>{% endif %}<small>Start is available only after a successful Apply. Stop keeps the current configuration and leases.</small></div>
 </section>
 
 <section class="grid two">

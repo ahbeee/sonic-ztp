@@ -47,4 +47,4 @@ Useful endpoints:
 - Kea candidate files use `/etc/kea/sonic-ztp`, which works with Ubuntu's default AppArmor profile without weakening it.
 - Multiple active profiles may route distinct device identities to distinct generated ztp.json documents.
 - Saving a scope updates the candidate without applying it. Apply validates with `kea-dhcp4 -t` and atomically replaces the managed Kea file only when validation succeeds.
-- Starting/stopping Kea from the web application remains disabled until the service-control safety workflow is implemented.
+- The web application can start and stop only `kea-dhcp4-server.service` through a narrowly scoped sudoers rule; Start remains blocked until a candidate has been applied successfully.

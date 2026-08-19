@@ -41,6 +41,13 @@ def test_apply_config_replaces_target(tmp_path):
     assert target.read_text() == '{"Dhcp4": {}}'
 
 
+def test_service_control_is_disabled_by_default():
+    provider = KeaProvider(replace(settings, allow_service_control=False))
+    success, output = provider.control_service("start")
+    assert success is False
+    assert "disabled" in output
+
+
 def test_sonic_profile_uses_option_67():
     provider = KeaProvider(settings)
     current = ConfigRevision(content=json.dumps(provider.default_config()))

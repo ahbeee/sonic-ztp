@@ -339,6 +339,31 @@ def apply_dhcp_candidate(session: Session = Depends(get_session)):
     return RedirectResponse("/dhcp", status_code=303)
 
 
+@app.post("/dhcp/start")
+def start_dhcp_service(session: Session = Depends(get_session)):
+    revision = latest_revision(session)
+    if not revision.applied:
+        revision.validation_output = "Start blocked: Apply candidate successfully before starting DHCP"
+        session.add(AuditEvent(action="dhcp.start", outcome="blocked", detail=revision.validation_output))
+        session.commit()
+        return RedirectResponse("/dhcp", status_code=303)
+    success, output = kea.control_service("start")
+    revision.validation_output = output
+    session.add(AuditEvent(action="dhcp.start", outcome="success" if success else "failed", detail=output))
+    session.commit()
+    return RedirectResponse("/dhcp", status_code=303)
+
+
+@app.post("/dhcp/stop")
+def stop_dhcp_service(session: Session = Depends(get_session)):
+    revision = latest_revision(session)
+    success, output = kea.control_service("stop")
+    revision.validation_output = output
+    session.add(AuditEvent(action="dhcp.stop", outcome="success" if success else "failed", detail=output))
+    session.commit()
+    return RedirectResponse("/dhcp", status_code=303)
+
+
 @app.post("/dhcp/revisions/{revision_id}/restore")
 def restore_dhcp_revision(revision_id: int, session: Session = Depends(get_session)):
     source = session.get(ConfigRevision, revision_id)

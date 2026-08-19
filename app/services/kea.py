@@ -53,6 +53,34 @@ class KeaProvider:
         enabled = self._systemctl_state("is-enabled") == "enabled"
         return KeaStatus(installed, active, enabled, self.settings.kea_service, self.settings.kea_binary)
 
+    def control_service(self, action: str) -> Tuple[bool, str]:
+        if action not in {"start", "stop", "restart"}:
+            return False, "Unsupported Kea service action"
+        if not self.settings.allow_service_control:
+            return False, "Kea service control is disabled by server policy"
+        unit = self.settings.kea_service
+        if not unit.endswith(".service"):
+            unit += ".service"
+        try:
+            result = subprocess.run(
+                ["sudo", "-n", "/usr/bin/systemctl", action, unit],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                timeout=20,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+            return False, "Unable to {} Kea: {}".format(action, exc)
+        state = self._systemctl_state("is-active")
+        expected = "active" if action in {"start", "restart"} else "inactive"
+        success = result.returncode == 0 and state == expected
+        detail = result.stdout.strip()
+        if success:
+            detail = "Kea DHCP service is {}".format(state)
+        elif not detail:
+            detail = "systemctl returned {} and service state is {}".format(result.returncode, state)
+        return success, detail
+
     def _systemctl_state(self, operation: str) -> str:
         try:
             result = subprocess.run(

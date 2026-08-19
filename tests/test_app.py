@@ -159,6 +159,19 @@ def test_static_reservation_is_added_to_candidate():
         assert client.post(f"/dhcp/reservations/{delete_path}/delete", follow_redirects=False).status_code == 303
 
 
+def test_start_requires_applied_candidate(monkeypatch):
+    calls = []
+    monkeypatch.setattr(kea, "control_service", lambda action: calls.append(action) or (True, "ok"))
+    with TestClient(app) as client:
+        client.post("/dhcp/scope", data={
+            "subnet": "192.168.56.0/24", "pool_start": "192.168.56.101",
+            "pool_end": "192.168.56.199", "lease_time": "600",
+        })
+        assert client.post("/dhcp/start", follow_redirects=False).status_code == 303
+        assert calls == []
+        assert "Start blocked" in client.get("/api/dhcp/config").json()["validation_output"]
+
+
 def test_scope_rejects_server_address_inside_pool():
     with TestClient(app) as client:
         response = client.post("/dhcp/scope", data={
