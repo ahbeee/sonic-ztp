@@ -1,4 +1,5 @@
 import json
+import ipaddress
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -11,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, init_database
-from app.models import Artifact, AuditEvent, ConfigRevision, ProfileMatch, ProvisioningProfile
+from app.models import Artifact, AuditEvent, ConfigRevision, DhcpScope, ProfileMatch, ProvisioningProfile
 from app.services.artifacts import store_stream
 from app.services.kea import KeaProvider
 from app.services.profiles import (
@@ -65,6 +66,37 @@ def regenerate_profile_candidate(session: Session) -> ConfigRevision:
         detail="revision={}".format(revision.id),
     ))
     return revision
+
+
+def scope_readiness(scope: DhcpScope | None, revision: ConfigRevision, active_profiles: int) -> list[dict]:
+    return [
+        {"label": "DHCP subnet and address pool", "ready": scope is not None},
+        {"label": "At least one active provisioning profile", "ready": active_profiles > 0},
+        {"label": "Kea candidate validation", "ready": revision.is_valid},
+        {"label": "Candidate applied to Kea", "ready": revision.applied},
+    ]
+
+
+def scope_candidate(revision: ConfigRevision, scope: DhcpScope) -> str:
+    config = json.loads(revision.content)
+    dhcp4 = config["Dhcp4"]
+    option_data = []
+    if scope.gateway:
+        option_data.append({"name": "routers", "data": scope.gateway})
+    if scope.dns_servers:
+        option_data.append({"name": "domain-name-servers", "data": scope.dns_servers})
+    dhcp4["valid-lifetime"] = scope.lease_time
+    dhcp4["renew-timer"] = max(1, scope.lease_time // 2)
+    dhcp4["rebind-timer"] = max(1, int(scope.lease_time * 0.8))
+    subnet = {
+        "id": 1,
+        "subnet": scope.subnet,
+        "pools": [{"pool": "{} - {}".format(scope.pool_start, scope.pool_end)}],
+    }
+    if option_data:
+        subnet["option-data"] = option_data
+    dhcp4["subnet4"] = [subnet]
+    return json.dumps(config, indent=2)
 
 
 @asynccontextmanager
@@ -129,11 +161,65 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
 @app.get("/dhcp", response_class=HTMLResponse)
 def dhcp_page(request: Request, session: Session = Depends(get_session)):
     revisions = session.scalars(select(ConfigRevision).order_by(desc(ConfigRevision.id)).limit(10)).all()
+    revision = latest_revision(session)
+    scope = session.get(DhcpScope, 1)
+    active_profiles = len(session.scalars(select(ProvisioningProfile).where(ProvisioningProfile.enabled.is_(True))).all())
     return templates.TemplateResponse(
         "dhcp.html",
-        {"request": request, "status": kea.status(), "revision": latest_revision(session),
+        {"request": request, "status": kea.status(), "revision": revision, "scope": scope,
+        "readiness": scope_readiness(scope, revision, active_profiles), "active_profiles": active_profiles,
         "revisions": revisions, "leases": kea.leases(), "settings": settings},
     )
+
+
+@app.post("/dhcp/scope")
+def save_dhcp_scope(
+    subnet: str = Form(...),
+    pool_start: str = Form(...),
+    pool_end: str = Form(...),
+    gateway: str = Form(""),
+    dns_servers: str = Form(""),
+    lease_time: int = Form(600),
+    session: Session = Depends(get_session),
+):
+    try:
+        network = ipaddress.ip_network(subnet.strip(), strict=True)
+        start = ipaddress.ip_address(pool_start.strip())
+        end = ipaddress.ip_address(pool_end.strip())
+        gateway_ip = ipaddress.ip_address(gateway.strip()) if gateway.strip() else None
+        dns = [ipaddress.ip_address(item.strip()) for item in dns_servers.split(",") if item.strip()]
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid IPv4 scope: {}".format(exc))
+    if network.version != 4 or start.version != 4 or end.version != 4:
+        raise HTTPException(status_code=422, detail="Only DHCPv4 scope is currently supported")
+    if start not in network or end not in network or start > end:
+        raise HTTPException(status_code=422, detail="Pool must be ordered and contained in the subnet")
+    if start in (network.network_address, network.broadcast_address) or end in (network.network_address, network.broadcast_address):
+        raise HTTPException(status_code=422, detail="Pool cannot include network or broadcast addresses")
+    server_ip = ipaddress.ip_address(settings.provisioning_address)
+    if server_ip in network and start <= server_ip <= end:
+        raise HTTPException(status_code=422, detail="Pool cannot include the ZTP server address {}".format(server_ip))
+    if gateway_ip and gateway_ip not in network:
+        raise HTTPException(status_code=422, detail="Gateway must be inside the subnet")
+    if not 60 <= lease_time <= 604800:
+        raise HTTPException(status_code=422, detail="Lease time must be between 60 and 604800 seconds")
+    scope = session.get(DhcpScope, 1) or DhcpScope(id=1)
+    scope.subnet = str(network)
+    scope.pool_start = str(start)
+    scope.pool_end = str(end)
+    scope.gateway = str(gateway_ip) if gateway_ip else ""
+    scope.dns_servers = ", ".join(str(item) for item in dns)
+    scope.lease_time = lease_time
+    content = scope_candidate(latest_revision(session), scope)
+    normalized, semantic_errors = kea.normalize_and_check(content)
+    valid, output = (False, "; ".join(semantic_errors)) if semantic_errors else kea.binary_validate(normalized)
+    revision = ConfigRevision(content=normalized, is_valid=valid, validation_output=output)
+    session.add(scope)
+    session.add(revision)
+    session.flush()
+    session.add(AuditEvent(action="dhcp.scope", outcome="success" if valid else "failed", detail="revision={} subnet={}".format(revision.id, scope.subnet)))
+    session.commit()
+    return RedirectResponse("/dhcp", status_code=303)
 
 
 @app.post("/dhcp/draft")

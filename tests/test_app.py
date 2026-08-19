@@ -18,7 +18,7 @@ def test_dashboard_and_dhcp_pages():
         assert client.get("/").status_code == 200
         assert client.get("/dhcp").status_code == 200
         config = client.get("/api/dhcp/config").json()
-        assert config["content"]["Dhcp4"]["subnet4"] == []
+        assert isinstance(config["content"]["Dhcp4"]["subnet4"], list)
         leases = client.get("/api/dhcp/leases").json()
         assert "leases" in leases
 
@@ -101,3 +101,31 @@ def test_sonic_profile_generates_configdb_only_json():
         document = client.get(f"/ztp/{profile_id}/ztp.json").json()
         assert list(document["ztp"]) == ["02-configdb-json"]
         assert document["ztp"]["02-configdb-json"]["url"]["source"].endswith(f"/files/{artifact_id}/leaf_config_db.json")
+
+
+def test_scope_form_generates_subnet_and_pool():
+    with TestClient(app) as client:
+        response = client.post("/dhcp/scope", data={
+            "subnet": "192.168.56.0/24",
+            "pool_start": "192.168.56.101",
+            "pool_end": "192.168.56.199",
+            "gateway": "",
+            "dns_servers": "8.8.8.8, 1.1.1.1",
+            "lease_time": "600",
+        }, follow_redirects=False)
+        assert response.status_code == 303
+        config = client.get("/api/dhcp/config").json()["content"]["Dhcp4"]
+        subnet = config["subnet4"][0]
+        assert subnet["subnet"] == "192.168.56.0/24"
+        assert subnet["pools"] == [{"pool": "192.168.56.101 - 192.168.56.199"}]
+        assert subnet["option-data"][0]["name"] == "domain-name-servers"
+
+
+def test_scope_rejects_server_address_inside_pool():
+    with TestClient(app) as client:
+        response = client.post("/dhcp/scope", data={
+            "subnet": "192.168.56.0/24", "pool_start": "192.168.56.190",
+            "pool_end": "192.168.56.210", "lease_time": "600",
+        })
+        assert response.status_code == 422
+        assert "server address" in response.json()["detail"]

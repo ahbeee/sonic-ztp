@@ -69,3 +69,16 @@ class ProfileMatch(Base):
     operator: Mapped[str] = mapped_column(String(20))
     value: Mapped[str] = mapped_column(String(255))
     position: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class DhcpScope(Base):
+    __tablename__ = "dhcp_scopes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    subnet: Mapped[str] = mapped_column(String(64))
+    pool_start: Mapped[str] = mapped_column(String(45))
+    pool_end: Mapped[str] = mapped_column(String(45))
+    gateway: Mapped[str] = mapped_column(String(45), default="")
+    dns_servers: Mapped[str] = mapped_column(String(255), default="")
+    lease_time: Mapped[int] = mapped_column(Integer, default=600)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))

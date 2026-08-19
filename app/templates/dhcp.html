@@ -1,9 +1,29 @@
 {% extends "base.html" %}
 {% block title %}DHCP · SONiC ZTP Server{% endblock %}
 {% block content %}
-<section class="hero"><div><p class="eyebrow">Kea provider</p><h1>DHCP configuration</h1><p>Bound to {{ settings.provisioning_interface }}. Service actions remain locked until a scope is approved.</p></div><span class="badge {{ 'ok' if status.active else 'neutral' }}">{{ 'Active' if status.active else 'Stopped' }}</span></section>
+<section class="hero"><div><p class="eyebrow">Kea provider</p><h1>DHCP configuration</h1><p>Configure the address scope before applying or starting DHCP on {{ settings.provisioning_interface }}.</p></div><span class="badge {{ 'ok' if status.active else 'neutral' }}">{{ 'Active' if status.active else 'Stopped' }}</span></section>
+
+<section class="readiness-panel {{ 'ready' if readiness|selectattr('ready')|list|length == readiness|length else 'warning' }}">
+  <div><h2>Before DHCP can start</h2><p>The service remains locked until every required item is complete.</p></div>
+  <ul>{% for item in readiness %}<li><span class="check {{ 'ok' if item.ready else 'missing' }}">{{ '✓' if item.ready else '!' }}</span>{{ item.label }}</li>{% endfor %}</ul>
+  <div class="locked-actions"><button type="button" disabled>Apply candidate</button><button type="button" disabled>Start DHCP</button><small>Apply and service control will be enabled in the next safety milestone.</small></div>
+</section>
+
 <section class="grid two">
-  <article><h2>Candidate revision #{{ revision.id }}</h2><form method="post" action="/dhcp/draft"><textarea name="content" spellcheck="false">{{ revision.content }}</textarea><button type="submit">Save new revision</button></form><form class="inline" method="post" action="/dhcp/validate"><button class="secondary" type="submit">Validate with Kea</button></form><pre class="result">{{ revision.validation_output }}</pre></article>
+  <article><h2>DHCPv4 scope</h2><form method="post" action="/dhcp/scope">
+    <label for="subnet">Subnet (CIDR)</label><input id="subnet" name="subnet" value="{{ scope.subnet if scope else '192.168.56.0/24' }}" required>
+    <div class="field-pair"><div><label for="pool-start">Pool start</label><input id="pool-start" name="pool_start" value="{{ scope.pool_start if scope else '192.168.56.101' }}" required></div><div><label for="pool-end">Pool end</label><input id="pool-end" name="pool_end" value="{{ scope.pool_end if scope else '192.168.56.199' }}" required></div></div>
+    <label for="gateway">Gateway (optional)</label><input id="gateway" name="gateway" value="{{ scope.gateway if scope else '' }}" placeholder="Leave empty for isolated Host-Only lab">
+    <label for="dns">DNS servers (optional, comma separated)</label><input id="dns" name="dns_servers" value="{{ scope.dns_servers if scope else '' }}" placeholder="e.g. 8.8.8.8, 1.1.1.1">
+    <label for="lease-time">Lease time (seconds)</label><input id="lease-time" name="lease_time" type="number" min="60" max="604800" value="{{ scope.lease_time if scope else 600 }}" required>
+    <p class="hint">The pool must not contain the ZTP server {{ settings.provisioning_address }}. Saving creates and validates a new candidate; it does not start DHCP.</p>
+    <button type="submit">Save scope and validate</button>
+  </form></article>
+  <article><h2>Current routing</h2><dl class="scope-summary"><div><dt>Interface</dt><dd>{{ settings.provisioning_interface }}</dd></div><div><dt>Server address</dt><dd>{{ settings.provisioning_address }}</dd></div><div><dt>Active profiles</dt><dd>{{ active_profiles }}</dd></div><div><dt>Candidate</dt><dd>#{{ revision.id }} · {{ 'Valid' if revision.is_valid else 'Not valid' }}</dd></div></dl><p class="hint">Provisioning Profiles control which ONIE image or generated ztp.json each matched client receives.</p><a href="/profiles">Manage provisioning profiles →</a></article>
+</section>
+
+<section class="grid two">
+  <article><h2>Candidate revision #{{ revision.id }}</h2><details><summary>Advanced: edit raw Kea JSON</summary><form method="post" action="/dhcp/draft"><textarea name="content" spellcheck="false">{{ revision.content }}</textarea><button type="submit">Save new revision</button></form></details><form class="inline no-offset" method="post" action="/dhcp/validate"><button class="secondary" type="submit">Validate with Kea</button></form><pre class="result">{{ revision.validation_output }}</pre></article>
   <article><h2>Revision history</h2><table><thead><tr><th>ID</th><th>Created</th><th>Status</th><th></th></tr></thead><tbody>{% for item in revisions %}<tr><td>#{{ item.id }}</td><td>{{ item.created_at }}</td><td>{{ 'valid' if item.is_valid else 'draft' }}</td><td>{% if item.id != revision.id %}<form method="post" action="/dhcp/revisions/{{ item.id }}/restore"><button class="compact secondary" type="submit">Restore</button></form>{% endif %}</td></tr>{% endfor %}</tbody></table></article>
 </section>
 <section><article><h2>Active leases</h2>{% if leases %}<table><thead><tr><th>Address</th><th>MAC</th><th>Hostname</th><th>Expires</th></tr></thead><tbody>{% for lease in leases %}<tr><td>{{ lease.address }}</td><td>{{ lease.hwaddr }}</td><td>{{ lease.hostname or '—' }}</td><td>{{ lease.expire }}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="empty">No active Kea leases. DHCP service remains stopped.</p>{% endif %}</article></section>
