@@ -69,6 +69,8 @@ def test_match_expression_supports_configurable_option_60_and_77():
     option77 = ProfileMatch(profile_id=1, option_code=77, operator="equals", value="SONiC-ZTP", position=1)
     expression = match_expression([option61, option77])
     assert "option[61]" in expression and "option[77]" in expression and " and " in expression
+    assert "option[77].hex == 0x534f4e69432d5a5450" in expression
+    assert "0x09534f4e69432d5a5450" not in expression
 
 
 def test_generates_configdb_only_ztp_json():

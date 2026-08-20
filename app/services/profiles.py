@@ -45,12 +45,10 @@ def match_condition_expression(condition: ProfileMatch) -> str:
             return "option[60].text == '{}'".format(condition.value)
         return "substring(option[60].text,0,{}) == '{}'".format(len(condition.value), condition.value)
     encoded = value_bytes.hex()
-    offset = 1 if condition.option_code == 77 else 0
-    prefix = "{:02x}".format(len(value_bytes)) if condition.option_code == 77 else ""
     if condition.operator == "equals":
-        return "option[{}].hex == 0x{}{}".format(condition.option_code, prefix, encoded)
+        return "option[{}].hex == 0x{}".format(condition.option_code, encoded)
     return "substring(option[{}].hex,{},{}) == 0x{}".format(
-        condition.option_code, offset, len(value_bytes), encoded
+        condition.option_code, 0, len(value_bytes), encoded
     )
 
 
