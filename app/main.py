@@ -574,7 +574,9 @@ def delete_artifact(artifact_id: int, session: Session = Depends(get_session)):
             detail="Artifact is used by profile(s): {}".format(", ".join(item.name for item in references)),
         )
     target = settings.artifact_dir / artifact.stored_name
-    trash_dir = settings.data_dir / "trash" / "artifacts"
+    # Keep the temporary delete target on the same filesystem/mount as the
+    # artifact store so os.replace remains atomic under systemd ReadWritePaths.
+    trash_dir = settings.artifact_dir / ".trash"
     trash_dir.mkdir(parents=True, exist_ok=True)
     trashed = trash_dir / artifact.stored_name
     if target.exists():
