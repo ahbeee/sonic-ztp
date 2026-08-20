@@ -8,7 +8,7 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Upload
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import delete, desc, select
+from sqlalchemy import delete, desc, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -383,7 +383,15 @@ def restore_dhcp_revision(revision_id: int, session: Session = Depends(get_sessi
 @app.get("/artifacts", response_class=HTMLResponse)
 def artifacts_page(request: Request, session: Session = Depends(get_session)):
     artifacts = session.scalars(select(Artifact).order_by(desc(Artifact.id))).all()
-    return templates.TemplateResponse("artifacts.html", {"request": request, "artifacts": artifacts})
+    profiles = session.scalars(select(ProvisioningProfile)).all()
+    references: dict[int, list[str]] = {}
+    for profile in profiles:
+        for artifact_id in (profile.artifact_id, profile.firmware_artifact_id, profile.configdb_artifact_id, profile.script_artifact_id):
+            if artifact_id:
+                references.setdefault(artifact_id, []).append(profile.name)
+    return templates.TemplateResponse(
+        "artifacts.html", {"request": request, "artifacts": artifacts, "artifact_references": references}
+    )
 
 
 @app.get("/profiles", response_class=HTMLResponse)
@@ -546,6 +554,44 @@ def update_artifact_comment(artifact_id: int, comment: str = Form(""), session: 
     artifact.comment = comment.strip()[:4000]
     session.add(AuditEvent(action="artifact.comment", outcome="success", detail="id={}".format(artifact.id)))
     session.commit()
+    return RedirectResponse("/artifacts", status_code=303)
+
+
+@app.post("/artifacts/{artifact_id}/delete")
+def delete_artifact(artifact_id: int, session: Session = Depends(get_session)):
+    artifact = session.get(Artifact, artifact_id)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    references = session.scalars(select(ProvisioningProfile).where(or_(
+        ProvisioningProfile.artifact_id == artifact_id,
+        ProvisioningProfile.firmware_artifact_id == artifact_id,
+        ProvisioningProfile.configdb_artifact_id == artifact_id,
+        ProvisioningProfile.script_artifact_id == artifact_id,
+    ))).all()
+    if references:
+        raise HTTPException(
+            status_code=409,
+            detail="Artifact is used by profile(s): {}".format(", ".join(item.name for item in references)),
+        )
+    target = settings.artifact_dir / artifact.stored_name
+    trash_dir = settings.data_dir / "trash" / "artifacts"
+    trash_dir.mkdir(parents=True, exist_ok=True)
+    trashed = trash_dir / artifact.stored_name
+    if target.exists():
+        target.replace(trashed)
+    try:
+        session.delete(artifact)
+        session.add(AuditEvent(
+            action="artifact.delete", outcome="success",
+            detail="id={} name={} sha256={}".format(artifact.id, artifact.original_name, artifact.sha256),
+        ))
+        session.commit()
+    except Exception:
+        session.rollback()
+        if trashed.exists():
+            trashed.replace(target)
+        raise
+    trashed.unlink(missing_ok=True)
     return RedirectResponse("/artifacts", status_code=303)
 
 

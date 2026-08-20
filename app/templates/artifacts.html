@@ -25,6 +25,7 @@
           <a class="artifact-name" href="{{ url_for('serve_artifact', artifact_id=item.id, filename=item.original_name) }}">{{ item.original_name }}</a>
           <small>Artifact #{{ item.id }} · {{ item.created_at }}</small>
           <code class="artifact-url">{{ url_for('serve_artifact', artifact_id=item.id, filename=item.original_name).path }}</code>
+          {% if artifact_references.get(item.id) %}<p class="hint">Used by: {{ artifact_references[item.id]|join(', ') }}</p><button class="compact danger" type="button" disabled title="Delete the referencing profiles first">Delete</button>{% else %}<form class="artifact-delete" method="post" action="/artifacts/{{ item.id }}/delete" onsubmit="return confirm('Permanently delete this stored file?');"><button class="compact danger" type="submit">Delete</button></form>{% endif %}
         </div>
         <dl class="artifact-meta">
           <div><dt>Size</dt><dd>{{ item.size }} bytes</dd></div>

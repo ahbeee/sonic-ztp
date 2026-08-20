@@ -99,10 +99,15 @@ def test_delete_profile_keeps_artifact_and_removes_client_class():
         profile_name = f"delete-test-{artifact_id}"
         client.post("/profiles", data={"name": profile_name, "stage": "onie", "artifact_id": artifact_id, "match_option": "60", "match_operator": "equals", "match_value": profile_name})
         profiles_page = client.get("/profiles")
+        blocked = client.post(f"/artifacts/{artifact_id}/delete", follow_redirects=False)
+        assert blocked.status_code == 409
+        assert profile_name in blocked.json()["detail"]
         delete_path = profiles_page.text.split('/delete"', 1)[0].rsplit('/profiles/', 1)[1]
         assert client.post(f"/profiles/{delete_path}/delete", follow_redirects=False).status_code == 303
         assert profile_name not in client.get("/profiles").text
         assert client.get(f"/files/{artifact_id}/delete-test.bin").status_code == 200
+        assert client.post(f"/artifacts/{artifact_id}/delete", follow_redirects=False).status_code == 303
+        assert client.get(f"/files/{artifact_id}/delete-test.bin").status_code == 404
         classes = client.get("/api/dhcp/config").json()["content"]["Dhcp4"].get("client-classes", [])
         assert all(profile_name not in item.get("test", "") for item in classes)
 
