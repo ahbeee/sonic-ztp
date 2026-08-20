@@ -5,8 +5,10 @@ __pycache__/
 .pytest_cache/
 tests/.runtime/
 .coverage
-data/*.db
-data/kea-candidate.json
+data/*
+!data/.gitkeep
 artifacts/*
 !artifacts/.gitkeep
 .env
+ZTP.pdf
+aeon-ztps/

@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "sonic-ztp-server"
 version = "0.1.0"
 description = "Web-managed ONIE and Enterprise SONiC provisioning server"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 dependencies = [
   "fastapi==0.103.2",
   "uvicorn==0.23.2",
@@ -19,6 +19,7 @@ dependencies = [
 dev = [
   "httpx==0.24.1",
   "pytest==8.3.5",
+  "ruff==0.16.3",
 ]
 
 [tool.setuptools.packages.find]
@@ -26,4 +27,3 @@ include = ["app*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-
