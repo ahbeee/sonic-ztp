@@ -58,6 +58,7 @@ def test_sonic_profile_uses_option_67():
     revision = build_candidate(current, [profile], matches, {9: artifact}, settings, provider)
     option = json.loads(revision.content)["Dhcp4"]["client-classes"][0]["option-data"][0]
     assert option["name"] == "boot-file-name"
+    assert option["always-send"] is True
     assert option["data"].endswith("/ztp/2/ztp.json")
 
 

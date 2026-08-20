@@ -101,13 +101,13 @@ def client_class(
         return {
             "name": "ztp-profile-{}".format(profile.id),
             "test": test,
-            "option-data": [{"code": 114, "data": artifact_url(settings, artifact)}],
+            "option-data": [{"code": 114, "data": artifact_url(settings, artifact), "always-send": True}],
         }
     if profile.stage == "sonic":
         return {
             "name": "ztp-profile-{}".format(profile.id),
             "test": test,
-            "option-data": [{"name": "boot-file-name", "data": ztp_url(settings, profile)}],
+            "option-data": [{"name": "boot-file-name", "data": ztp_url(settings, profile), "always-send": True}],
         }
     raise ValueError("Unsupported provisioning stage")
 

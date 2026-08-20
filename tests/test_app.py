@@ -75,6 +75,7 @@ def test_create_onie_profile_generates_versioned_candidate():
         config = client.get("/api/dhcp/config").json()["content"]["Dhcp4"]
         generated = config["client-classes"][-1]
         assert generated["option-data"][0]["code"] == 114
+        assert generated["option-data"][0]["always-send"] is True
         assert "custom_onie" in generated["test"]
         assert f"/files/{artifact_id}/onie-installer.bin" in generated["option-data"][0]["data"]
         assert profile_name in client.get("/profiles").text
