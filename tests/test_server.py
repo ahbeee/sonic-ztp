@@ -43,6 +43,7 @@ lease 192.0.2.10 {
             ZTP_DHCP_CONFIG=str(cls.config),
             ZTP_DHCP_LEASES=str(cls.leases),
             ZTP_ARTIFACT_DIR=str(root / "artifacts"),
+            ZTP_GENERATED_DIR=str(root / "generated"),
         )
         source = Path(__file__).resolve().parents[1] / "server.py"
         spec = importlib.util.spec_from_file_location("ztp_test_server", source)
@@ -85,6 +86,24 @@ lease 192.0.2.10 {
         self.assertEqual(second.count("BEGIN SONIC-ZTP MANAGED RESERVATIONS"), 1)
         self.assertNotIn("leaf-01", second)
         self.assertTrue(self.server.validate_config(second)[0])
+
+    def test_onie_and_sonic_profiles_generate_valid_dhcp_syntax(self):
+        artifact = {"id": 1, "stored_name": "installer.bin"}
+        onie = {"id": 1, "stage": "onie", "enabled": 1, "option1": 60, "operator1": "starts_with", "value1": "onie_vendor", "option2": None, "operator2": None, "value2": None, "installer_artifact_id": 1}
+        sonic = {"id": 2, "stage": "sonic", "enabled": 1, "option1": 61, "operator1": "starts_with", "value1": "SONiC##", "option2": 77, "operator2": "equals", "value2": "SONiC-ZTP", "installer_artifact_id": None}
+        updated = self.server.update_profiles(self.config.read_text(), [onie, sonic], [artifact])
+        self.assertIn("option default-url code 114 = text;", updated)
+        self.assertIn('filename "http://10.101.113.253/ztp/generated/profile-2.json";', updated)
+        self.assertTrue(self.server.validate_config(updated)[0])
+
+    def test_generated_sonic_ztp_document(self):
+        profile = {"id": 9, "firmware_artifact_id": None, "config_artifact_id": 2, "script_artifact_id": 3}
+        artifacts = [{"id": 2, "stored_name": "config.json"}, {"id": 3, "stored_name": "post.sh"}]
+        url = self.server.write_generated_ztp(profile, artifacts)
+        document = (self.server.GENERATED_DIR / "profile-9.json").read_text()
+        self.assertIn("02-configdb-json", document)
+        self.assertIn("03-provisioning-script", document)
+        self.assertTrue(url.endswith("profile-9.json"))
 
 
 if __name__ == "__main__":
