@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import cgi
 import html
+import ipaddress
 import json
 import os
 import re
@@ -52,6 +53,10 @@ def initialize():
             id INTEGER PRIMARY KEY AUTOINCREMENT, original_name TEXT NOT NULL,
             stored_name TEXT NOT NULL UNIQUE, size INTEGER NOT NULL,
             comment TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL)""")
+        connection.execute("""CREATE TABLE IF NOT EXISTS reservations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, hostname TEXT NOT NULL,
+            mac TEXT NOT NULL UNIQUE, ip_address TEXT NOT NULL UNIQUE,
+            comment TEXT NOT NULL DEFAULT '')""")
 
 
 def service_state():
@@ -76,6 +81,71 @@ def validate_config(content):
         return result.returncode == 0, result.stdout.strip() or "Configuration validation passed"
     finally:
         Path(handle.name).unlink(missing_ok=True)
+
+
+def parse_scope(content):
+    subnet = re.search(r"subnet\s+([0-9.]+)\s+netmask\s+([0-9.]+)\s*\{", content)
+    pool = re.search(r"range\s+([0-9.]+)\s+([0-9.]+)\s*;", content)
+    gateway = re.search(r"(?m)^[ \t]*option\s+routers\s+([^;]+);", content)
+    dns = re.search(r"(?m)^[ \t]*option\s+domain-name-servers\s+([^;]+);", content)
+    default_lease = re.search(r"default-lease-time\s+(\d+)\s*;", content)
+    max_lease = re.search(r"max-lease-time\s+(\d+)\s*;", content)
+    if not subnet or not pool:
+        return None
+    network = ipaddress.ip_network("{}/{}".format(subnet.group(1), subnet.group(2)), strict=False)
+    return {"subnet": str(network), "pool_start": pool.group(1), "pool_end": pool.group(2), "gateway": gateway.group(1).strip() if gateway else "", "dns": dns.group(1).strip() if dns else "", "default_lease": default_lease.group(1) if default_lease else "600", "max_lease": max_lease.group(1) if max_lease else "7200"}
+
+
+def replace_first(pattern, replacement, content, label):
+    updated, count = re.subn(pattern, replacement, content, count=1)
+    if count != 1:
+        raise ValueError("Unable to locate " + label + " in candidate")
+    return updated
+
+
+def update_scope(content, values):
+    network = ipaddress.ip_network(values["subnet"], strict=False)
+    start = ipaddress.ip_address(values["pool_start"])
+    end = ipaddress.ip_address(values["pool_end"])
+    if network.version != 4 or start not in network or end not in network or start > end:
+        raise ValueError("Pool must be an ordered IPv4 range inside the subnet")
+    server_ip = ipaddress.ip_address("10.101.113.253")
+    if start <= server_ip <= end:
+        raise ValueError("Pool cannot include the ZTP server address 10.101.113.253")
+    gateway = values["gateway"].strip()
+    if gateway and ipaddress.ip_address(gateway) not in network:
+        raise ValueError("Gateway must be inside the DHCP subnet")
+    dns_items = [item.strip() for item in values["dns"].split(",") if item.strip()]
+    for item in dns_items: ipaddress.ip_address(item)
+    default_lease = int(values["default_lease"])
+    max_lease = int(values["max_lease"])
+    if not 60 <= default_lease <= max_lease <= 604800:
+        raise ValueError("Lease times must satisfy 60 <= default <= max <= 604800")
+    content = replace_first(r"subnet\s+[0-9.]+\s+netmask\s+[0-9.]+\s*\{", "subnet {} netmask {} {{".format(network.network_address, network.netmask), content, "subnet")
+    content = replace_first(r"range\s+[0-9.]+\s+[0-9.]+\s*;", "range {} {};".format(start, end), content, "pool")
+    content = replace_first(r"default-lease-time\s+\d+\s*;", "default-lease-time {};".format(default_lease), content, "default lease time")
+    content = replace_first(r"max-lease-time\s+\d+\s*;", "max-lease-time {};".format(max_lease), content, "maximum lease time")
+    router_line = "option routers {};".format(gateway) if gateway else "# option routers intentionally omitted;"
+    content = replace_first(r"(?m)^[ \t]*(?:option\s+routers\s+[^;]+;|# option routers intentionally omitted;)", "  " + router_line, content, "router option")
+    dns_line = "option domain-name-servers {};".format(", ".join(dns_items)) if dns_items else "# option domain-name-servers intentionally omitted;"
+    content = replace_first(r"(?m)^[ \t]*(?:option\s+domain-name-servers\s+[^;]+;|# option domain-name-servers intentionally omitted;)", "  " + dns_line, content, "DNS option")
+    return content
+
+
+def reservation_block(reservations):
+    lines = ["### BEGIN SONIC-ZTP MANAGED RESERVATIONS ###"]
+    for item in reservations:
+        lines.extend(["host {} {{".format(item["hostname"]), "  hardware ethernet {};".format(item["mac"]), "  fixed-address {};".format(item["ip_address"]), "}"])
+    lines.append("### END SONIC-ZTP MANAGED RESERVATIONS ###")
+    return "\n".join(lines)
+
+
+def update_reservations(content, reservations):
+    block = reservation_block(reservations)
+    pattern = r"\n?### BEGIN SONIC-ZTP MANAGED RESERVATIONS ###.*?### END SONIC-ZTP MANAGED RESERVATIONS ###\n?"
+    if re.search(pattern, content, re.S):
+        return re.sub(pattern, "\n" + block + "\n", content, count=1, flags=re.S)
+    return content.rstrip() + "\n\n" + block + "\n"
 
 
 def apply_candidate():
@@ -158,7 +228,15 @@ class Handler(BaseHTTPRequestHandler):
             candidate = CANDIDATE_PATH.read_text(encoding="utf-8") if CANDIDATE_PATH.exists() else ""
             rows = "".join("<tr><td>{address}</td><td>{mac}</td><td>{state}</td><td>{ends}</td><td>{vendor}</td></tr>".format(**{k: html.escape(v) for k,v in item.items()}) for item in parse_leases())
             state = service_state()
-            body = '<section class="hero"><div><h1>ISC DHCP</h1><p class="muted">Live file: {}</p></div><span class="badge {}">{}</span></section><article><div class="actions"><div><form class="inline" method="post" action="/dhcp/start"><button>Start</button></form> <form class="inline" method="post" action="/dhcp/stop"><button class="danger">Stop</button></form></div></div><form method="post" action="/dhcp/candidate"><label>Candidate dhcpd.conf</label><textarea name="content" spellcheck="false">{}</textarea><p><button>Save candidate</button> <button class="primary" formaction="/dhcp/apply">Validate, apply and restart</button></p></form></article><article><h2>Leases</h2><table><thead><tr><th>Address</th><th>MAC</th><th>State</th><th>Ends</th><th>Vendor class</th></tr></thead><tbody>{}</tbody></table></article>'.format(html.escape(str(DHCP_CONFIG)), "ok" if state == "active" else "bad", html.escape(state), html.escape(candidate), rows)
+            scope = parse_scope(candidate)
+            with db() as connection: reservations = connection.execute("SELECT * FROM reservations ORDER BY id").fetchall()
+            scope_form = ""
+            if scope:
+                safe = {key: html.escape(value) for key, value in scope.items()}
+                scope_form = '''<article><h2>DHCPv4 scope</h2><p class="muted">Save updates and validates the candidate only. Apply it separately below.</p><form method="post" action="/dhcp/scope"><div class="grid"><div><label>Subnet (CIDR)</label><input name="subnet" value="{subnet}" required><label>Pool start</label><input name="pool_start" value="{pool_start}" required><label>Pool end</label><input name="pool_end" value="{pool_end}" required></div><div><label>Gateway</label><input name="gateway" value="{gateway}"><label>DNS servers (comma separated)</label><input name="dns" value="{dns}"><label>Default lease time</label><input type="number" name="default_lease" value="{default_lease}" required><label>Maximum lease time</label><input type="number" name="max_lease" value="{max_lease}" required></div></div><p><button>Save scope to candidate</button></p></form></article>'''.format(**safe)
+            reservation_rows = "".join('<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td><form class="inline" method="post" action="/dhcp/reservations/{}/delete"><button class="danger">Delete</button></form></td></tr>'.format(html.escape(item["hostname"]), html.escape(item["mac"]), html.escape(item["ip_address"]), html.escape(item["comment"]), item["id"]) for item in reservations)
+            reservation_form = '''<article><h2>Static IP reservations</h2><form method="post" action="/dhcp/reservations"><div class="grid"><div><label>Hostname</label><input name="hostname" placeholder="leaf-01" required><label>MAC address</label><input name="mac" placeholder="52:54:00:12:34:56" required></div><div><label>IPv4 address</label><input name="ip_address" placeholder="10.101.113.100" required><label>Comment</label><input name="comment"></div></div><p><button>Add to candidate</button></p></form><table><thead><tr><th>Hostname</th><th>MAC</th><th>IP</th><th>Comment</th><th></th></tr></thead><tbody>{}</tbody></table></article>'''.format(reservation_rows)
+            body = '<section class="hero"><div><h1>ISC DHCP</h1><p class="muted">Live file: {}</p></div><span class="badge {}">{}</span></section>{}{}<article><div class="actions"><div><form class="inline" method="post" action="/dhcp/start"><button>Start</button></form> <form class="inline" method="post" action="/dhcp/stop"><button class="danger">Stop</button></form></div></div><form method="post" action="/dhcp/candidate"><label>Advanced: complete candidate dhcpd.conf</label><textarea name="content" spellcheck="false">{}</textarea><p><button>Save candidate</button> <button class="primary" formaction="/dhcp/apply">Validate, apply and restart</button></p></form></article><article><h2>Leases</h2><table><thead><tr><th>Address</th><th>MAC</th><th>State</th><th>Ends</th><th>Vendor class</th></tr></thead><tbody>{}</tbody></table></article>'.format(html.escape(str(DHCP_CONFIG)), "ok" if state == "active" else "bad", html.escape(state), scope_form, reservation_form, html.escape(candidate), rows)
             self.send_page("DHCP", body, message, error); return
         if path == "/artifacts":
             with db() as connection: items = connection.execute("SELECT * FROM artifacts ORDER BY id DESC").fetchall()
@@ -175,6 +253,49 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         path = urllib.parse.urlsplit(self.path).path
         try:
+            if path == "/dhcp/scope":
+                form = self.form()
+                values = {key: form.get(key, [""])[0] for key in ("subnet", "pool_start", "pool_end", "gateway", "dns", "default_lease", "max_lease")}
+                content = update_scope(CANDIDATE_PATH.read_text(encoding="utf-8"), values)
+                valid, output = validate_config(content)
+                if not valid: self.redirect("/dhcp", output, True); return
+                CANDIDATE_PATH.write_text(content, encoding="utf-8")
+                self.redirect("/dhcp", "Scope saved to candidate; Apply is still required"); return
+            if path == "/dhcp/reservations":
+                form = self.form()
+                hostname = form.get("hostname", [""])[0].strip().lower()
+                mac = form.get("mac", [""])[0].strip().lower()
+                address = form.get("ip_address", [""])[0].strip()
+                comment = form.get("comment", [""])[0].strip()[:2000]
+                if not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", hostname): raise ValueError("Invalid hostname")
+                if not re.fullmatch(r"(?:[0-9a-f]{2}:){5}[0-9a-f]{2}", mac): raise ValueError("Invalid MAC address")
+                ip = ipaddress.ip_address(address)
+                scope = parse_scope(CANDIDATE_PATH.read_text(encoding="utf-8"))
+                if not scope or ip not in ipaddress.ip_network(scope["subnet"]): raise ValueError("Static IP must be inside the DHCP subnet")
+                if str(ip) == "10.101.113.253": raise ValueError("Static IP cannot be the ZTP server address")
+                with db() as connection:
+                    current = [dict(item) for item in connection.execute("SELECT * FROM reservations ORDER BY id")]
+                    prospective = current + [{"hostname": hostname, "mac": mac, "ip_address": str(ip), "comment": comment}]
+                    content = update_reservations(CANDIDATE_PATH.read_text(encoding="utf-8"), prospective)
+                    valid, output = validate_config(content)
+                    if not valid: self.redirect("/dhcp", output, True); return
+                    try: connection.execute("INSERT INTO reservations(hostname,mac,ip_address,comment) VALUES(?,?,?,?)", (hostname, mac, str(ip), comment))
+                    except sqlite3.IntegrityError: raise ValueError("MAC address or static IP already exists")
+                    CANDIDATE_PATH.write_text(content, encoding="utf-8")
+                self.redirect("/dhcp", "Static reservation added to candidate; Apply is still required"); return
+            reservation_match = re.fullmatch(r"/dhcp/reservations/(\d+)/delete", path)
+            if reservation_match:
+                reservation_id = int(reservation_match.group(1))
+                with db() as connection:
+                    item = connection.execute("SELECT * FROM reservations WHERE id=?", (reservation_id,)).fetchone()
+                    if not item: raise ValueError("Reservation not found")
+                    remaining = [dict(row) for row in connection.execute("SELECT * FROM reservations WHERE id<>? ORDER BY id", (reservation_id,))]
+                    content = update_reservations(CANDIDATE_PATH.read_text(encoding="utf-8"), remaining)
+                    valid, output = validate_config(content)
+                    if not valid: self.redirect("/dhcp", output, True); return
+                    connection.execute("DELETE FROM reservations WHERE id=?", (reservation_id,))
+                    CANDIDATE_PATH.write_text(content, encoding="utf-8")
+                self.redirect("/dhcp", "Static reservation removed from candidate; Apply is still required"); return
             if path == "/dhcp/candidate":
                 content = self.form().get("content", [""])[0]
                 valid, output = validate_config(content)

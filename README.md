@@ -9,6 +9,11 @@ Initial functions:
 - start and stop `isc-dhcp-server.service` through a restricted sudo rule;
 - display ISC DHCP leases;
 - upload and delete artifacts served by the existing Nginx document root.
+- edit the DHCPv4 subnet, pool, gateway, DNS, and lease times through structured fields;
+- add and remove static DHCP reservations through a managed candidate block.
+
+Structured changes update and validate the candidate only. Select **Validate,
+apply and restart** separately to change the live DHCP service.
 
 The UI listens on port 8080 and has no authentication. Use it only on a trusted lab network.
 

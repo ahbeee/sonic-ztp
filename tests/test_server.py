@@ -12,7 +12,15 @@ class ServerTests(unittest.TestCase):
         root = Path(cls.temp.name)
         cls.config = root / "dhcpd.conf"
         cls.leases = root / "dhcpd.leases"
-        cls.config.write_text("subnet 192.0.2.0 netmask 255.255.255.0 {}\n")
+        cls.config.write_text("""#option domain-name-servers wrong.example.org;
+default-lease-time 600;
+max-lease-time 7200;
+subnet 192.0.2.0 netmask 255.255.255.0 {
+  option routers 192.0.2.1;
+  option domain-name-servers 192.0.2.2;
+  pool { range 192.0.2.100 192.0.2.199; }
+}
+""")
         cls.leases.write_text(
             """lease 192.0.2.10 {
   starts 4 2026/08/20 01:00:00;
@@ -60,6 +68,23 @@ lease 192.0.2.10 {
         invalid, _ = self.server.validate_config("this is not dhcp syntax")
         self.assertTrue(valid)
         self.assertFalse(invalid)
+
+    def test_scope_parser_and_updater(self):
+        scope = self.server.parse_scope(self.config.read_text())
+        self.assertEqual(scope["subnet"], "192.0.2.0/24")
+        self.assertEqual(scope["dns"], "192.0.2.2")
+        scope.update(pool_start="192.0.2.50", pool_end="192.0.2.99", gateway="192.0.2.254", dns="192.0.2.3,192.0.2.4", default_lease="900", max_lease="3600")
+        updated = self.server.update_scope(self.config.read_text(), scope)
+        self.assertIn("range 192.0.2.50 192.0.2.99;", updated)
+        self.assertIn("option routers 192.0.2.254;", updated)
+        self.assertTrue(self.server.validate_config(updated)[0])
+
+    def test_managed_reservation_block_is_replaceable(self):
+        first = self.server.update_reservations(self.config.read_text(), [{"hostname":"leaf-01", "mac":"52:54:00:12:34:56", "ip_address":"192.0.2.20"}])
+        second = self.server.update_reservations(first, [])
+        self.assertEqual(second.count("BEGIN SONIC-ZTP MANAGED RESERVATIONS"), 1)
+        self.assertNotIn("leaf-01", second)
+        self.assertTrue(self.server.validate_config(second)[0])
 
 
 if __name__ == "__main__":
