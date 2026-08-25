@@ -17,9 +17,8 @@ Initial functions:
 - combine up to two option 60, 61, or 77 match conditions per profile;
 - generate firmware, config DB, and provisioning-script ZTP sections;
 - prevent deletion of artifacts referenced by provisioning profiles.
-- display DHCP options 60, 61, and 77 alongside each lease;
-- decode ISC `uid` values for option 61 and capture option 77 on future lease
-  commit/renew events.
+- display DHCP options 60 and 61 alongside each lease;
+- decode ISC `uid` values for option 61.
 
 Structured changes update and validate the candidate only. Select **Validate,
 apply and restart** separately to change the live DHCP service.

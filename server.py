@@ -256,12 +256,11 @@ def parse_leases():
             match = re.search(pattern, block)
             return match.group(1) if match else ""
         uid = field(r'uid\s+"((?:\\.|[^"])*)"')
-        option77 = field(r'set ztp-option-77\s*=\s*"((?:\\.|[^"])*)"')
-        latest[address] = {"address": address, "state": field(r"binding state\s+([^;]+)"), "mac": field(r"hardware ethernet\s+([^;]+)"), "starts": field(r"starts\s+[^ ]+\s+([^;]+)"), "ends": field(r"ends\s+[^ ]+\s+([^;]+)"), "vendor": decode_isc_value(field(r'set vendor-class-identifier\s*=\s*"((?:\\.|[^"])*)"')), "option61": decode_isc_value(uid), "option77": decode_isc_value(option77, strip_length=True)}
+        latest[address] = {"address": address, "state": field(r"binding state\s+([^;]+)"), "mac": field(r"hardware ethernet\s+([^;]+)"), "starts": field(r"starts\s+[^ ]+\s+([^;]+)"), "ends": field(r"ends\s+[^ ]+\s+([^;]+)"), "vendor": decode_isc_value(field(r'set vendor-class-identifier\s*=\s*"((?:\\.|[^"])*)"')), "option61": decode_isc_value(uid)}
     return sorted(latest.values(), key=lambda item: tuple(int(x) for x in item["address"].split(".")))
 
 
-def decode_isc_value(value, strip_length=False):
+def decode_isc_value(value):
     if not value:
         return ""
     output = bytearray()
@@ -274,30 +273,11 @@ def decode_isc_value(value, strip_length=False):
         else:
             output.extend(value[index].encode("latin-1", errors="replace")); index += 1
     data = bytes(output)
-    if strip_length and data and data[0] == len(data) - 1:
-        data = data[1:]
     if data and all(32 <= byte <= 126 for byte in data):
         return data.decode("ascii")
     if len(data) > 1 and data[0] in (0, 1) and all(32 <= byte <= 126 for byte in data[1:]):
         return "0x{:02x} + {}".format(data[0], data[1:].decode("ascii"))
     return "0x" + data.hex()
-
-
-def update_option_capture(content):
-    block = """### BEGIN SONIC-ZTP OPTION CAPTURE ###
-on commit {
-  if exists dhcp-client-identifier {
-    set ztp-option-61 = option dhcp-client-identifier;
-  }
-  if exists user-class {
-    set ztp-option-77 = option user-class;
-  }
-}
-### END SONIC-ZTP OPTION CAPTURE ###"""
-    pattern = r"\n?### BEGIN SONIC-ZTP OPTION CAPTURE ###.*?### END SONIC-ZTP OPTION CAPTURE ###\n?"
-    if re.search(pattern, content, re.S):
-        return re.sub(pattern, "\n" + block + "\n", content, count=1, flags=re.S)
-    return content.rstrip() + "\n\n" + block + "\n"
 
 
 def page(title, body, message="", error=False):
@@ -344,7 +324,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_page("Dashboard", body, message, error); return
         if path == "/dhcp":
             candidate = CANDIDATE_PATH.read_text(encoding="utf-8") if CANDIDATE_PATH.exists() else ""
-            rows = "".join("<tr><td>{address}</td><td>{mac}</td><td>{state}</td><td>{ends}</td><td>{vendor}</td><td>{option61}</td><td>{option77}</td></tr>".format(**{k: html.escape(v) for k,v in item.items()}) for item in parse_leases())
+            rows = "".join("<tr><td>{address}</td><td>{mac}</td><td>{state}</td><td>{ends}</td><td>{vendor}</td><td>{option61}</td></tr>".format(**{k: html.escape(v) for k,v in item.items()}) for item in parse_leases())
             state = service_state()
             scope = parse_scope(candidate)
             with db() as connection: reservations = connection.execute("SELECT * FROM reservations ORDER BY id").fetchall()
@@ -354,8 +334,7 @@ class Handler(BaseHTTPRequestHandler):
                 scope_form = '''<article><h2>DHCPv4 scope</h2><p class="muted">Save updates and validates the candidate only. Apply it separately below.</p><form method="post" action="/dhcp/scope"><div class="grid"><div><label>Subnet (CIDR)</label><input name="subnet" value="{subnet}" required><label>Pool start</label><input name="pool_start" value="{pool_start}" required><label>Pool end</label><input name="pool_end" value="{pool_end}" required></div><div><label>Gateway</label><input name="gateway" value="{gateway}"><label>DNS servers (comma separated)</label><input name="dns" value="{dns}"><label>Default lease time</label><input type="number" name="default_lease" value="{default_lease}" required><label>Maximum lease time</label><input type="number" name="max_lease" value="{max_lease}" required></div></div><p><button>Save scope to candidate</button></p></form></article>'''.format(**safe)
             reservation_rows = "".join('<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td><form class="inline" method="post" action="/dhcp/reservations/{}/delete"><button class="danger">Delete</button></form></td></tr>'.format(html.escape(item["hostname"]), html.escape(item["mac"]), html.escape(item["ip_address"]), html.escape(item["comment"]), item["id"]) for item in reservations)
             reservation_form = '''<article><h2>Static IP reservations</h2><form method="post" action="/dhcp/reservations"><div class="grid"><div><label>Hostname</label><input name="hostname" placeholder="leaf-01" required><label>MAC address</label><input name="mac" placeholder="52:54:00:12:34:56" required></div><div><label>IPv4 address</label><input name="ip_address" placeholder="10.101.113.100" required><label>Comment</label><input name="comment"></div></div><p><button>Add to candidate</button></p></form><table><thead><tr><th>Hostname</th><th>MAC</th><th>IP</th><th>Comment</th><th></th></tr></thead><tbody>{}</tbody></table></article>'''.format(reservation_rows)
-            capture = '<span class="badge ok">Option 61/77 capture enabled</span>' if "BEGIN SONIC-ZTP OPTION CAPTURE" in candidate else '<form method="post" action="/dhcp/capture"><button>Enable option 61/77 capture</button></form>'
-            body = '<section class="hero"><div><h1>ISC DHCP</h1><p class="muted">Live file: {}</p></div><span class="badge {}">{}</span></section>{}{}<article><div class="actions"><div><form class="inline" method="post" action="/dhcp/start"><button>Start</button></form> <form class="inline" method="post" action="/dhcp/stop"><button class="danger">Stop</button></form></div>{}</div><form method="post" action="/dhcp/candidate"><label>Advanced: complete candidate dhcpd.conf</label><textarea name="content" spellcheck="false">{}</textarea><p><button>Save candidate</button> <button class="primary" formaction="/dhcp/apply">Validate, apply and restart</button></p></form></article><article><h2>Leases</h2><p class="muted">Option 61 is read from the ISC uid field. Option 77 appears after capture is applied and the client obtains or renews a lease.</p><table><thead><tr><th>Address</th><th>MAC</th><th>State</th><th>Ends</th><th>Option 60<br>Vendor Class</th><th>Option 61<br>Client ID</th><th>Option 77<br>User Class</th></tr></thead><tbody>{}</tbody></table></article>'.format(html.escape(str(DHCP_CONFIG)), "ok" if state == "active" else "bad", html.escape(state), scope_form, reservation_form, capture, html.escape(candidate), rows)
+            body = '<section class="hero"><div><h1>ISC DHCP</h1><p class="muted">Live file: {}</p></div><span class="badge {}">{}</span></section>{}{}<article><div class="actions"><div><form class="inline" method="post" action="/dhcp/start"><button>Start</button></form> <form class="inline" method="post" action="/dhcp/stop"><button class="danger">Stop</button></form></div></div><form method="post" action="/dhcp/candidate"><label>Advanced: complete candidate dhcpd.conf</label><textarea name="content" spellcheck="false">{}</textarea><p><button>Save candidate</button> <button class="primary" formaction="/dhcp/apply">Validate, apply and restart</button></p></form></article><article><h2>Leases</h2><p class="muted">Option 61 is read from the ISC uid field.</p><table><thead><tr><th>Address</th><th>MAC</th><th>State</th><th>Ends</th><th>Option 60<br>Vendor Class</th><th>Option 61<br>Client ID</th></tr></thead><tbody>{}</tbody></table></article>'.format(html.escape(str(DHCP_CONFIG)), "ok" if state == "active" else "bad", html.escape(state), scope_form, reservation_form, html.escape(candidate), rows)
             self.send_page("DHCP", body, message, error); return
         if path == "/profiles":
             with db() as connection:
@@ -380,12 +359,6 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         path = urllib.parse.urlsplit(self.path).path
         try:
-            if path == "/dhcp/capture":
-                content = update_option_capture(CANDIDATE_PATH.read_text(encoding="utf-8"))
-                valid, output = validate_config(content)
-                if not valid: self.redirect("/dhcp", output, True); return
-                CANDIDATE_PATH.write_text(content, encoding="utf-8")
-                self.redirect("/dhcp", "Option 61/77 capture added to candidate; Apply is required"); return
             if path == "/dhcp/scope":
                 form = self.form()
                 values = {key: form.get(key, [""])[0] for key in ("subnet", "pool_start", "pool_end", "gateway", "dns", "default_lease", "max_lease")}
