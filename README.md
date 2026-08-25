@@ -1,8 +1,21 @@
 # SONiC ZTP Server
 
-A web-managed provisioning server for installing a NOS through ONIE and provisioning Broadcom Enterprise SONiC. It combines a FastAPI web application, Kea DHCP, artifact storage, and profile-specific `ztp.json` generation.
+A web-managed provisioning server for installing a NOS through ONIE and provisioning Broadcom Enterprise SONiC. This repository contains implementations for both Kea DHCP and ISC DHCP.
 
 This project is intended for an isolated provisioning network. The web interface does not currently provide authentication; do not expose it directly to an untrusted network.
+
+## DHCP implementations
+
+| Implementation | Location | Intended deployment | Runtime |
+| --- | --- | --- | --- |
+| Kea DHCP (primary) | Repository root | Ubuntu 24.04 with `kea-dhcp4-server` | FastAPI/Uvicorn |
+| ISC DHCP | [`isc-dhcp/`](isc-dhcp/) | Debian with an existing `isc-dhcp-server` and Nginx | Python standard library |
+
+The implementations are independently deployable and must not manage the same
+provisioning network at the same time. They share the same ONIE and Enterprise
+SONiC workflow, but their configuration formats, validation commands, service
+names, and runtime databases remain separate. See
+[`isc-dhcp/README.md`](isc-dhcp/README.md) for the ISC-specific deployment.
 
 ## Features
 
@@ -35,7 +48,7 @@ This project is intended for an isolated provisioning network. The web interface
 
 Client identifiers vary by platform. Verify the actual DHCP packet before defining production match rules.
 
-## Requirements
+## Kea implementation requirements
 
 - Ubuntu 24.04 (the current tested deployment)
 - Python 3.10 or newer (Python 3.12 on Ubuntu 24.04 is tested)
@@ -129,6 +142,8 @@ Runtime state is deliberately excluded from Git:
 
 - `artifacts/` contains uploaded NOS images, JSON files, and scripts.
 - `data/` contains the SQLite database and generated runtime files.
+- `isc-dhcp/data/` contains the ISC implementation's SQLite database and
+  candidate/backup configuration files.
 - `ZTP.pdf` is vendor documentation and is not distributed in this repository.
 - the earlier `aeon-ztps` source tree is not part of this implementation.
 
