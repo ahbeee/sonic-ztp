@@ -34,6 +34,8 @@ lease 192.0.2.10 {
   ends 4 2026/08/20 03:00:00;
   binding state free;
   hardware ethernet 52:54:00:12:34:56;
+  uid "SONiC##TEST##SERIAL";
+  set ztp-option-77 = "\\011SONiC-ZTP";
 }
 """
         )
@@ -63,6 +65,8 @@ lease 192.0.2.10 {
         self.assertEqual(len(leases), 1)
         self.assertEqual(leases[0]["address"], "192.0.2.10")
         self.assertEqual(leases[0]["state"], "free")
+        self.assertEqual(leases[0]["option61"], "SONiC##TEST##SERIAL")
+        self.assertEqual(leases[0]["option77"], "SONiC-ZTP")
 
     def test_valid_and_invalid_dhcp_configuration(self):
         valid, _ = self.server.validate_config(self.config.read_text())
@@ -104,6 +108,12 @@ lease 192.0.2.10 {
         self.assertIn("02-configdb-json", document)
         self.assertIn("03-provisioning-script", document)
         self.assertTrue(url.endswith("profile-9.json"))
+
+    def test_option_capture_block_is_valid(self):
+        updated = self.server.update_option_capture(self.config.read_text())
+        self.assertIn("set ztp-option-61", updated)
+        self.assertIn("set ztp-option-77", updated)
+        self.assertTrue(self.server.validate_config(updated)[0])
 
 
 if __name__ == "__main__":
