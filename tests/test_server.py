@@ -95,7 +95,8 @@ lease 192.0.2.10 {
         sonic = {"id": 2, "stage": "sonic", "enabled": 1, "option1": 61, "operator1": "starts_with", "value1": "SONiC##", "option2": 77, "operator2": "equals", "value2": "SONiC-ZTP", "installer_artifact_id": None}
         updated = self.server.update_profiles(self.config.read_text(), [onie, sonic], [artifact])
         self.assertIn("option default-url code 114 = text;", updated)
-        self.assertIn('filename "http://10.101.113.253/ztp/generated/profile-2.json";', updated)
+        self.assertIn('option bootfile-name "http://10.101.113.253/ztp/generated/profile-2.json";', updated)
+        self.assertNotIn('  filename "', updated)
         self.assertIn('option user-class = "\\x09SONiC-ZTP"', updated)
         self.assertTrue(self.server.validate_config(updated)[0])
         replaced = self.server.update_profiles(updated, [sonic], [artifact])

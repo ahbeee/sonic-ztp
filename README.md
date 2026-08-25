@@ -13,7 +13,7 @@ Initial functions:
 - add and remove static DHCP reservations through a managed candidate block.
 - create ONIE profiles that return the selected installer with DHCP option 114;
 - create Enterprise SONiC profiles that return a generated `ztp.json` with
-  DHCP option 67;
+  DHCP option 67 (`bootfile-name`), rather than only the legacy BOOTP file field;
 - combine up to two option 60, 61, or 77 match conditions per profile;
 - match both legacy and RFC 3004 encoded forms of DHCP option 77;
 - generate firmware, config DB, and provisioning-script ZTP sections;

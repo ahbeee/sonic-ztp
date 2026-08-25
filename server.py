@@ -217,7 +217,7 @@ def profile_block(profiles, artifacts):
             if not artifact: raise ValueError("ONIE profile references a missing installer")
             lines.append('  option default-url "{}";'.format(artifact_url(artifact)))
         else:
-            lines.append('  filename "{}/profile-{}.json";'.format(GENERATED_BASE_URL.rstrip("/"), item["id"]))
+            lines.append('  option bootfile-name "{}/profile-{}.json";'.format(GENERATED_BASE_URL.rstrip("/"), item["id"]))
         lines.append("}")
     lines.append("### END SONIC-ZTP MANAGED PROFILES ###")
     return "\n".join(lines)
