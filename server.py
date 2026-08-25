@@ -154,7 +154,7 @@ def update_reservations(content, reservations):
     block = reservation_block(reservations)
     pattern = r"\n?### BEGIN SONIC-ZTP MANAGED RESERVATIONS ###.*?### END SONIC-ZTP MANAGED RESERVATIONS ###\n?"
     if re.search(pattern, content, re.S):
-        return re.sub(pattern, "\n" + block + "\n", content, count=1, flags=re.S)
+        return re.sub(pattern, lambda _: "\n" + block + "\n", content, count=1, flags=re.S)
     return content.rstrip() + "\n\n" + block + "\n"
 
 
@@ -168,6 +168,12 @@ def match_condition(option, operator, value):
     if not re.fullmatch(r"[A-Za-z0-9_.:/+#-]{1,255}", value):
         raise ValueError("Match value contains unsupported characters")
     source = "option " + OPTION_NAMES[option]
+    if option == 77:
+        if operator == "equals":
+            rfc3004 = "\\x{:02x}{}".format(len(value.encode("utf-8")), value)
+            return '(exists user-class and (option user-class = "{}" or option user-class = "{}"))'.format(value, rfc3004)
+        size = len(value.encode("utf-8"))
+        return '(exists user-class and (substring(option user-class, 0, {0}) = "{1}" or substring(option user-class, 1, {0}) = "{1}"))'.format(size, value)
     if operator == "equals":
         return '{} = "{}"'.format(source, value)
     return 'substring({}, 0, {}) = "{}"'.format(source, len(value.encode("utf-8")), value)
@@ -221,7 +227,7 @@ def update_profiles(content, profiles, artifacts):
     block = profile_block(profiles, artifacts)
     pattern = r"\n?### BEGIN SONIC-ZTP MANAGED PROFILES ###.*?### END SONIC-ZTP MANAGED PROFILES ###\n?"
     if re.search(pattern, content, re.S):
-        return re.sub(pattern, "\n" + block + "\n", content, count=1, flags=re.S)
+        return re.sub(pattern, lambda _: "\n" + block + "\n", content, count=1, flags=re.S)
     return content.rstrip() + "\n\n" + block + "\n"
 
 

@@ -96,7 +96,12 @@ lease 192.0.2.10 {
         updated = self.server.update_profiles(self.config.read_text(), [onie, sonic], [artifact])
         self.assertIn("option default-url code 114 = text;", updated)
         self.assertIn('filename "http://10.101.113.253/ztp/generated/profile-2.json";', updated)
+        self.assertIn('option user-class = "\\x09SONiC-ZTP"', updated)
         self.assertTrue(self.server.validate_config(updated)[0])
+        replaced = self.server.update_profiles(updated, [sonic], [artifact])
+        self.assertEqual(replaced.count("BEGIN SONIC-ZTP MANAGED PROFILES"), 1)
+        self.assertIn('option user-class = "\\x09SONiC-ZTP"', replaced)
+        self.assertTrue(self.server.validate_config(replaced)[0])
 
     def test_generated_sonic_ztp_document(self):
         profile = {"id": 9, "firmware_artifact_id": None, "config_artifact_id": 2, "script_artifact_id": 3}

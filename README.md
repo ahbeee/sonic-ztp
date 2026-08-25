@@ -15,6 +15,7 @@ Initial functions:
 - create Enterprise SONiC profiles that return a generated `ztp.json` with
   DHCP option 67;
 - combine up to two option 60, 61, or 77 match conditions per profile;
+- match both legacy and RFC 3004 encoded forms of DHCP option 77;
 - generate firmware, config DB, and provisioning-script ZTP sections;
 - prevent deletion of artifacts referenced by provisioning profiles.
 - display DHCP options 60 and 61 alongside each lease;
