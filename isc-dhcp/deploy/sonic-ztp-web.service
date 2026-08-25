@@ -1,0 +1,25 @@
+[Unit]
+Description=SONiC ZTP ISC DHCP Web UI
+After=network-online.target isc-dhcp-server.service nginx.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=poc113@lab.edge-core.com
+WorkingDirectory=/home/poc113@lab.edge-core.com/sonic-ztp-isc
+Environment=ZTP_BASE_DIR=/home/poc113@lab.edge-core.com/sonic-ztp-isc
+Environment=ZTP_LISTEN_ADDRESS=0.0.0.0
+Environment=ZTP_LISTEN_PORT=8080
+Environment=ZTP_DHCP_CONFIG=/etc/dhcp/dhcpd.conf
+Environment=ZTP_DHCP_LEASES=/var/lib/dhcp/dhcpd.leases
+Environment=ZTP_ARTIFACT_DIR=/var/www/html/ztp/files
+Environment=ZTP_PUBLIC_BASE_URL=http://10.101.113.253/ztp/files
+ExecStart=/usr/bin/python3 /home/poc113@lab.edge-core.com/sonic-ztp-isc/server.py
+Restart=on-failure
+RestartSec=3
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/etc/dhcp/dhcpd.conf /var/www/html/ztp /home/poc113@lab.edge-core.com/sonic-ztp-isc
+
+[Install]
+WantedBy=multi-user.target
